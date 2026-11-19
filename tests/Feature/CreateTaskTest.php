@@ -1,0 +1,118 @@
+<?php
+
+use App\Actions\Tasks\CreateTask;
+use App\Models\Area;
+use App\Models\Task;
+use App\Models\TaskDependency;
+use App\Models\User;
+use App\TaskStatus;
+use App\TicketPriority;
+use Database\Seeders\RolesAndPermissionsSeeder;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Carbon;
+use Illuminate\Validation\ValidationException;
+
+it('creates a standalone task with a dependency and an initial transition', function () {
+    $this->seed(RolesAndPermissionsSeeder::class);
+
+    $manager = User::factory()->jefeArea()->create();
+    $area = Area::factory()->managedBy($manager)->create();
+    $dependency = Task::factory()->done()->create(['area_id' => $area->id]);
+
+    $this->actingAs($manager);
+
+    $task = app(CreateTask::class)->handle([
+        'title' => 'Instalar luminarias',
+        'description' => 'Revisar el inventario antes de instalar.',
+        'area_id' => $area->id,
+        'parent_id' => null,
+        'assignee_id' => null,
+        'status' => TaskStatus::Todo,
+        'priority' => TicketPriority::High,
+        'estimated_minutes' => 120,
+        'actual_minutes' => null,
+        'due_at' => Carbon::parse('2026-12-20'),
+        'depends_on_task_id' => $dependency->id,
+    ]);
+
+    expect($task->ticket_id)->toBeNull()
+        ->and($task->parent_id)->toBeNull()
+        ->and($task->area_id)->toBe($area->id)
+        ->and($task->priority)->toBe(TicketPriority::High)
+        ->and($task->due_at->toDateString())->toBe('2026-12-20')
+        ->and($task->dependencies()->first()->depends_on_task_id)->toBe($dependency->id)
+        ->and($task->statusTransitions()->first()->to_status)->toBe(TaskStatus::Todo->value);
+});
+
+it('rejects creating a task in an area the manager does not manage', function () {
+    $this->seed(RolesAndPermissionsSeeder::class);
+
+    $manager = User::factory()->jefeArea()->create();
+    Area::factory()->managedBy($manager)->create();
+    $otherArea = Area::factory()->create();
+
+    $this->actingAs($manager);
+
+    expect(fn () => app(CreateTask::class)->handle([
+        'title' => 'Tarea en área ajena',
+        'description' => null,
+        'area_id' => $otherArea->id,
+        'parent_id' => null,
+        'assignee_id' => null,
+        'status' => TaskStatus::Todo,
+        'priority' => TicketPriority::Medium,
+        'estimated_minutes' => null,
+        'actual_minutes' => null,
+        'due_at' => null,
+        'depends_on_task_id' => null,
+    ]))->toThrow(ValidationException::class);
+});
+
+it('does not let collaborators create tasks from the board', function () {
+    $this->seed(RolesAndPermissionsSeeder::class);
+
+    $collaborator = User::factory()->colaborador()->create();
+    $area = Area::factory()->create();
+
+    $this->actingAs($collaborator);
+
+    expect(fn () => app(CreateTask::class)->handle([
+        'title' => 'Tarea del colaborador',
+        'description' => null,
+        'area_id' => $area->id,
+        'parent_id' => null,
+        'assignee_id' => null,
+        'status' => TaskStatus::Todo,
+        'priority' => TicketPriority::Medium,
+        'estimated_minutes' => null,
+        'actual_minutes' => null,
+        'due_at' => null,
+        'depends_on_task_id' => null,
+    ]))->toThrow(AuthorizationException::class);
+});
+
+it('requires the dependency to be done before creating a task already in progress', function () {
+    $this->seed(RolesAndPermissionsSeeder::class);
+
+    $manager = User::factory()->jefeArea()->create();
+    $area = Area::factory()->managedBy($manager)->create();
+    $dependency = Task::factory()->create(['area_id' => $area->id]);
+
+    $this->actingAs($manager);
+
+    expect(fn () => app(CreateTask::class)->handle([
+        'title' => 'Tarea bloqueada por dependencia',
+        'description' => null,
+        'area_id' => $area->id,
+        'parent_id' => null,
+        'assignee_id' => null,
+        'status' => TaskStatus::InProgress,
+        'priority' => TicketPriority::Medium,
+        'estimated_minutes' => null,
+        'actual_minutes' => null,
+        'due_at' => null,
+        'depends_on_task_id' => $dependency->id,
+    ]))->toThrow(ValidationException::class);
+
+    expect(TaskDependency::count())->toBe(0);
+});
