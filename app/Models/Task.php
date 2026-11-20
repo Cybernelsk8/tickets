@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Carbon;
 
@@ -35,6 +36,12 @@ use Illuminate\Support\Carbon;
  * @property int $children_count
  * @property int $subtasks_total_count
  * @property int $subtasks_done_count
+ * @property Ticket|null $ticket
+ * @property Task|null $parent
+ * @property User|null $assignee
+ * @property Area|null $area
+ * @property User|null $creator
+ * @property TaskStatusTransition|null $latestStatusTransition
  */
 #[Fillable([
     'ticket_id', 'parent_id', 'title', 'description', 'assignee_id', 'area_id',
@@ -152,6 +159,12 @@ class Task extends Model
     public function statusTransitions(): HasMany
     {
         return $this->hasMany(TaskStatusTransition::class);
+    }
+
+    /** @return HasOne<TaskStatusTransition, $this> */
+    public function latestStatusTransition(): HasOne
+    {
+        return $this->hasOne(TaskStatusTransition::class)->latestOfMany('occurred_at');
     }
 
     /** @return MorphMany<Comment, $this> */

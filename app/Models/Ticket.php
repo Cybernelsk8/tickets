@@ -32,6 +32,11 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $due_at
  * @property Carbon|null $assigned_at
  * @property Carbon|null $closed_at
+ * @property Area|null $area
+ * @property TicketCategory|null $category
+ * @property User|null $assignee
+ * @property User|null $creator
+ * @property Task|null $rootTask
  */
 #[Fillable([
     'code', 'source', 'mail_message_id', 'subject', 'description',

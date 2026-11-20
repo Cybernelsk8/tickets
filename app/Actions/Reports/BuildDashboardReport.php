@@ -11,6 +11,7 @@ use App\TaskStatus;
 use App\TicketPriority;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
@@ -44,9 +45,8 @@ class BuildDashboardReport
      *     weeklySeries: array{categories: array<int, string>, values: array<int, int>},
      *     workloadSeries: array<int, array{label: string, active: int, completed: int}>,
      *     stageAverages: array<int, array{label: string, hours: float}>,
-     *     recentTickets: Collection<int, Ticket>,
-     *     recentTasks: Collection<int, Task>,
-     *     readyForReviewTasks: Collection<int, Task>
+     *     recentWorkItems: Collection<int, DashboardWorkItem>,
+     *     readyForReviewWorkItems: Collection<int, DashboardWorkItem>
      * }
      */
     public function handle(User $user, array $filters = []): array
@@ -169,41 +169,61 @@ class BuildDashboardReport
             ->groupBy('week')
             ->pluck('total', 'week');
 
+        $recentTasks = (clone $taskQuery)
+            ->with($this->workItemRelations())
+            ->with($this->rootTaskRelations())
+            ->withCount($this->subtaskCounts())
+            ->orderByRaw('COALESCE(completed_at, updated_at, created_at) DESC')
+            ->orderByDesc('id')
+            ->limit(10)
+            ->get();
+
         $recentTickets = (clone $ticketQuery)
             ->with([
                 'area:id,name',
                 'category:id,name',
                 'assignee:id,name',
+                'creator:id,name',
+                'rootTask' => fn (Builder|Relation $query): mixed => $query
+                    ->with($this->workItemRelations(false))
+                    ->withCount($this->subtaskCounts()),
             ])
             ->orderByDesc('created_at')
             ->orderByDesc('id')
-            ->limit(5)
-            ->get();
-
-        $recentTasks = (clone $taskQuery)
-            ->with([
-                'parent:id,title',
-                'assignee:id,name',
-                'area:id,name',
-            ])
-            ->orderByRaw('COALESCE(completed_at, created_at) DESC')
-            ->orderByDesc('id')
-            ->limit(5)
+            ->limit(10)
             ->get();
 
         $readyForReviewTasks = (clone $readyForReviewQuery)
-            ->with([
-                'assignee:id,name',
-                'area:id,name',
-            ])
-            ->withCount([
-                'children as subtasks_total_count',
-                'children as subtasks_done_count' => fn (Builder $query): mixed => $query
-                    ->where('status', TaskStatus::Done->value),
-            ])
+            ->with($this->workItemRelations())
+            ->withCount($this->subtaskCounts())
             ->orderByDesc('updated_at')
-            ->limit(5)
+            ->limit(10)
             ->get();
+
+        $recentWorkItems = $recentTasks
+            ->map(function (Task $task): DashboardWorkItem {
+                $root = $task->parent instanceof Task ? $task->parent : $task;
+
+                return DashboardWorkItem::fromTask($root, null, $task);
+            })
+            ->concat($recentTickets->map(function (Ticket $ticket): DashboardWorkItem {
+                $root = $ticket->rootTask;
+
+                if (! $root instanceof Task) {
+                    return DashboardWorkItem::fromTicket($ticket);
+                }
+
+                $root->setRelation('ticket', $ticket);
+
+                return DashboardWorkItem::fromTask($root, $ticket);
+            }))
+            ->unique(fn (DashboardWorkItem $item): string => $item->key)
+            ->sortByDesc(fn (DashboardWorkItem $item): int => $item->activityTimestamp)
+            ->values()
+            ->take(10);
+
+        $readyForReviewWorkItems = $readyForReviewTasks
+            ->map(fn (Task $task): DashboardWorkItem => DashboardWorkItem::fromTask($task));
 
         return [
             'scopeLabel' => $this->scopeLabel($user, $personalScope),
@@ -267,9 +287,8 @@ class BuildDashboardReport
                 ['label' => __('Pruebas → Terminado'), 'hours' => round((float) ($stageMetrics['to_done'] ?? 0), 1)],
                 ['label' => __('Ciclo total'), 'hours' => round((float) ($stageMetrics['total_cycle'] ?? 0), 1)],
             ],
-            'recentTickets' => $recentTickets,
-            'recentTasks' => $recentTasks,
-            'readyForReviewTasks' => $readyForReviewTasks,
+            'recentWorkItems' => $recentWorkItems,
+            'readyForReviewWorkItems' => $readyForReviewWorkItems,
         ];
     }
 
@@ -468,6 +487,52 @@ class BuildDashboardReport
         } elseif ($assigneeId !== null) {
             $query->where('assignee_id', $assigneeId);
         }
+    }
+
+    /**
+     * Relations required to render a work-item row without N+1 queries.
+     *
+     * @return array<int, string>
+     */
+    private function workItemRelations(bool $includeTicket = true): array
+    {
+        $relations = [
+            'area:id,name',
+            'assignee:id,name',
+            'creator:id,name',
+            'latestStatusTransition.changedBy:id,name',
+        ];
+
+        if ($includeTicket) {
+            $relations[] = 'ticket:id,code,subject,description,area_id,category_id,priority,status,assignee_id,requester_name,requester_email,created_by,assigned_at,closed_at,created_at';
+            $relations[] = 'ticket.category:id,name';
+        }
+
+        return $relations;
+    }
+
+    /**
+     * @return array<string, \Closure>
+     */
+    private function rootTaskRelations(): array
+    {
+        return [
+            'parent' => fn (Builder|Relation $query): mixed => $query
+                ->with($this->workItemRelations())
+                ->withCount($this->subtaskCounts()),
+        ];
+    }
+
+    /**
+     * @return array<int|string, \Closure|string>
+     */
+    private function subtaskCounts(): array
+    {
+        return [
+            'children as subtasks_total_count',
+            'children as subtasks_done_count' => fn (Builder|Relation $query): mixed => $query
+                ->where('status', TaskStatus::Done->value),
+        ];
     }
 
     /**

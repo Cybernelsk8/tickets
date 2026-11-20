@@ -16,8 +16,49 @@
 | 3 — Ticket y notificación | ✅ Completada | Conversión desde bandeja, asignación, tarea raíz y correo encolado al remitente |
 | 4 — Kanban/proyectos | ✅ Completada | Tablero único de 3 columnas, scopes, DnD, subtareas, dependencias, tiempos y vista detalle |
 | 5 — Colaborador/trazabilidad | ✅ Completada | Mis tareas, comentarios/adjuntos privados, evidencia antes de Done y notificación al superior |
-| 6 — Dashboard | ✅ Completada | KPIs agregados/indexados, gráficas ApexCharts, filtros y permisos por rol; ajustado con regla “raíz manda” para separar entregables de subtareas |
+| 6 — Dashboard | ✅ Completada | KPIs agregados/indexados, gráficas ApexCharts, filtros y permisos por rol; tabla única de entregables con regla “raíz manda” y subtareas solo al expandir |
 | 7 — Hardening | ⏳ Pendiente | Colas, scheduler, seguridad, pruebas finales |
+
+---
+
+## 2026-11-20 — Fase 6: tabla única de entregables recientes en el dashboard ✅
+
+- **Fase:** 6 (Dashboard), unificación final de entregables, listas para revisión y tickets recientes.
+- **Qué se hizo:**
+    - Creado `App\Actions\Reports\DashboardWorkItem`: DTO único de cada fila, con clave estable `task-{id}`/`ticket-{id}`, título `TKT-0004 — Asunto`, progreso, colores, fechas y actividad ordenable.
+    - Refactorizado `BuildDashboardReport::handle()` para publicar `recentWorkItems` y `readyForReviewWorkItems`, deduplicando por clave y precargando relaciones. La tarea raíz siempre gana sobre el ticket cuando ambos existen; los tickets sin tarea aparecen como fila independiente con `Sin asignar` cuando corresponde.
+    - Reemplazadas las tablas separadas por una sola tabla `Entregables recientes` en `resources/views/livewire/dashboard/index.blade.php`, con filtro `Listas para revisión`, barra de progreso, colores rojo/naranja/amarillo/verde y conteo `x/y subtareas`.
+    - La expansión bajo demanda muestra las subtareas con `Subtarea de: <título>`, responsable, estado y fecha de terminación. El dropdown de tres puntos ofrece `Detalles` y `Ver ticket` solo cuando hay ticket; el modal muestra código, asunto, área, categoría, prioridad, responsable, solicitante/correo, fechas y descripción.
+    - `Dashboard\Index` añadió `workItems()`, `expandedWorkItemId`, `detailsWorkItemKey`, `toggleWorkItem()`, `openDetails()` y validación de claves contra el reporte del usuario (`#[Locked]`).
+    - `Ver ticket` ahora enlaza a `tickets.index` con `?search=<código>`. Se añadió `#[Url]` a la propiedad `search` de `App\Livewire\Tickets\Index` para que el deep link filtre realmente la lista.
+    - Anotadas relaciones nullable en `Task` y `Ticket` para que Larastan infiera correctamente los fallbacks del DTO; los `?->` bajo `??` se extrajeron a variables locales para cumplir la regla `nullsafe.neverNull`.
+- **Hallazgos:**
+    - La implementación intermedia todavía pintaba el progreso con `amber` en `Listas para revisión`; se corrigió a verde solo cuando `Done` sin subtareas o cuando el desglose llega al 100 %.
+    - `statusChangedByName` caía al creador de la tarea/ticket aunque no hubiera transición registrada; ahora solo se muestra si existe transición real.
+    - `route('tickets.index', ['search' => ...])` no hidrataba `search` porque la propiedad no tenía `#[Url]`; el enlace parecía correcto pero no filtraba.
+    - PHPStan 2.3 marca `?->prop ?? …` como `nullsafe.neverNull` incluso con intermedios nullable; la corrección sin ignorar el error fue evaluar la ruta en una variable local antes del coalesce.
+- **Decisiones:**
+    - Una sola tabla: `Listas para revisión` es un filtro/estado dentro de `Entregables recientes`, no una tarjeta ni tabla separada.
+    - Sin subtareas: barra verde `100 %` únicamente en `Terminado`; en los demás estados manda el badge y se muestra `Sin desglose`.
+    - Con subtareas: rojo `0–24 %`, naranja `25–49 %`, amarillo `50–99 %`, verde `100 %`; el porcentaje nunca cierra la raíz por sí solo.
+    - El modal es solo lectura y se resuelve contra el reporte autorizado del usuario, sin consultas nuevas por clave arbitraria.
+    - No se crearon permisos nuevos ni dependencias nuevas.
+- **Archivos creados/modificados (resumen):**
+    - Nuevo: `app/Actions/Reports/DashboardWorkItem.php`.
+    - Modificados: `app/Actions/Reports/BuildDashboardReport.php`, `app/Livewire/Dashboard/Index.php`, `resources/views/livewire/dashboard/index.blade.php`, `app/Livewire/Tickets/Index.php`, `app/Models/Task.php`, `app/Models/Ticket.php`, `tests/Feature/DashboardReportTest.php`, `tests/Feature/Tickets/TicketsUiTest.php`, `ia/avances.md`.
+- **Pruebas ejecutadas:**
+    - `php artisan test --compact tests/Feature/DashboardReportTest.php tests/Feature/TaskCompletionRulesTest.php tests/Feature/Tickets/TicketsUiTest.php` → **26/26 en verde, 143 aserciones**.
+    - `php artisan test --compact` → **193/193 en verde, 640 aserciones**.
+    - `vendor/bin/phpstan analyse --no-progress` → **0 errores**.
+    - `vendor/bin/pint --dirty --format agent` → aplicado.
+    - `npm run build` → correcto; solo advertencias conocidas de `fontaine` opcional y tamaño del bundle.
+    - `browser-logs` → sin errores JS nuevos en `/dashboard` ni `/boards`.
+- **Problemas / bloqueos resueltos:**
+    - Fallo inicial de eager load: los closures de `with()` reciben `Builder|Relation`; se ajustaron los tipos y la importación de `Relation`.
+    - La prueba XSS fallaba porque el `<script>` estaba en el asunto del ticket, pero la fila usa el título de la tarea raíz; se movió el payload al lugar correcto.
+    - Se mantuvo `Ver ticket` con deep link funcional en lugar de dejar solo el enlace genérico al listado.
+- **Próximo paso:** Fase 7 — Hardening y entrega: SMTP real, `storage:link`, queue worker, scheduler, rate limiting, seeders de demostración y verificación final de extremo a extremo. Publicación pendiente: el push a GitHub sigue bloqueado por falta de credenciales/SSH; el commit local quedará listo en `main`.
+- **Checklist del plan actualizado:** sí, Fase 6 queda documentada con la tabla unificada y el deep link de tickets.
 
 ---
 

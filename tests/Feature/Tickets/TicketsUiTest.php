@@ -51,6 +51,27 @@ it('lists tickets and assigns one from the interface', function () {
     Mail::assertQueued(TicketAssignedMail::class);
 });
 
+it('hydrates the ticket search from the query string', function () {
+    $manager = User::factory()->mailManager()->create();
+    $ticket = Ticket::factory()->create([
+        'subject' => 'Ticket enlazado',
+        'area_id' => null,
+        'category_id' => null,
+    ]);
+    Ticket::factory()->create([
+        'subject' => 'Ticket ajeno al enlace',
+        'area_id' => null,
+        'category_id' => null,
+    ]);
+
+    Livewire::actingAs($manager)
+        ->withQueryParams(['search' => $ticket->code])
+        ->test(Index::class)
+        ->assertSet('search', $ticket->code)
+        ->assertSee('Ticket enlazado')
+        ->assertDontSee('Ticket ajeno al enlace');
+});
+
 it('rejects an assignee from another area in the interface', function () {
     $manager = User::factory()->mailManager()->create();
     $area = Area::factory()->create();

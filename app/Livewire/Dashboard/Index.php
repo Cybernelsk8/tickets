@@ -3,12 +3,15 @@
 namespace App\Livewire\Dashboard;
 
 use App\Actions\Reports\BuildDashboardReport;
+use App\Actions\Reports\DashboardWorkItem;
 use App\Models\Area;
+use App\Models\Task;
 use App\Models\TicketCategory;
 use App\Models\User;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
+use Livewire\Attributes\Locked;
 use Livewire\Component;
 
 class Index extends Component
@@ -22,6 +25,16 @@ class Index extends Component
     public ?int $categoryId = null;
 
     public ?int $assigneeId = null;
+
+    public string $workItemFilter = 'all';
+
+    #[Locked]
+    public ?string $expandedWorkItemId = null;
+
+    #[Locked]
+    public ?string $detailsWorkItemKey = null;
+
+    public bool $showDetailsModal = false;
 
     public function mount(): void
     {
@@ -81,6 +94,64 @@ class Index extends Component
             ->whereIn('area_id', $areaIds)
             ->orderBy('name')
             ->get(['id', 'name']);
+    }
+
+    /**
+     * @return Collection<int, DashboardWorkItem>
+     */
+    #[Computed]
+    public function workItems(): Collection
+    {
+        $report = $this->report();
+        $items = $report['recentWorkItems']
+            ->concat($report['readyForReviewWorkItems'])
+            ->unique(fn (DashboardWorkItem $item): string => $item->key);
+
+        if ($this->workItemFilter === 'review') {
+            return $items
+                ->filter(fn (DashboardWorkItem $item): bool => $item->isReadyForReview)
+                ->values();
+        }
+
+        return $items->values();
+    }
+
+    /**
+     * @return Collection<int, Task>
+     */
+    #[Computed]
+    public function expandedSubtasks(): Collection
+    {
+        if ($this->expandedWorkItemId === null) {
+            return collect();
+        }
+
+        $item = $this->workItems()->first(
+            fn (DashboardWorkItem $workItem): bool => $workItem->key === $this->expandedWorkItemId
+        );
+
+        if (! $item instanceof DashboardWorkItem || $item->taskId === null || ! $item->hasSubtasks) {
+            return collect();
+        }
+
+        return Task::query()
+            ->where('parent_id', $item->taskId)
+            ->with('assignee:id,name')
+            ->orderBy('position')
+            ->orderBy('id')
+            ->get();
+    }
+
+    #[Computed]
+    public function detailsWorkItem(): ?DashboardWorkItem
+    {
+        if ($this->detailsWorkItemKey === null) {
+            return null;
+        }
+
+        return $this->workItems()->first(
+            fn (DashboardWorkItem $item): bool => $item->key === $this->detailsWorkItemKey
+        );
     }
 
     /**
@@ -200,6 +271,50 @@ class Index extends Component
         $this->forgetReports();
     }
 
+    public function setWorkItemFilter(string $filter): void
+    {
+        $this->workItemFilter = in_array($filter, ['all', 'review'], true) ? $filter : 'all';
+        unset($this->workItems);
+        $this->resetWorkItemSelection();
+    }
+
+    public function updatedWorkItemFilter(): void
+    {
+        unset($this->workItems);
+        $this->resetWorkItemSelection();
+    }
+
+    public function toggleWorkItem(string $key): void
+    {
+        $item = $this->workItems()->first(
+            fn (DashboardWorkItem $workItem): bool => $workItem->key === $key
+        );
+
+        if (! $item instanceof DashboardWorkItem || $item->taskId === null || ! $item->hasSubtasks) {
+            $this->expandedWorkItemId = null;
+
+            return;
+        }
+
+        $this->expandedWorkItemId = $this->expandedWorkItemId === $key ? null : $key;
+    }
+
+    public function openDetails(string $key): void
+    {
+        if (! $this->workItems()->contains(fn (DashboardWorkItem $item): bool => $item->key === $key)) {
+            return;
+        }
+
+        $this->detailsWorkItemKey = $key;
+        $this->showDetailsModal = true;
+    }
+
+    public function closeDetails(): void
+    {
+        $this->showDetailsModal = false;
+        $this->detailsWorkItemKey = null;
+    }
+
     public function render(): View
     {
         return view('livewire.dashboard.index');
@@ -241,10 +356,18 @@ class Index extends Component
         $this->areaId = null;
         $this->categoryId = null;
         $this->assigneeId = null;
+        $this->workItemFilter = 'all';
     }
 
     private function forgetReports(): void
     {
-        unset($this->report, $this->charts);
+        $this->resetWorkItemSelection();
+        unset($this->report, $this->charts, $this->workItems, $this->expandedSubtasks, $this->detailsWorkItem);
+    }
+
+    private function resetWorkItemSelection(): void
+    {
+        $this->expandedWorkItemId = null;
+        $this->closeDetails();
     }
 }

@@ -77,15 +77,27 @@
             ['label' => __('% entregables terminados'), 'value' => number_format($this->report['deliverableCompletionRate'], 1).' %'],
             ['label' => __('Subtareas terminadas'), 'value' => $this->report['completedSubtasks']],
             ['label' => __('Avance del desglose'), 'value' => number_format($this->report['subtaskProgressRate'], 1).' %'],
-            ['label' => __('Listas para revisión'), 'value' => $this->report['readyForReview']],
+            ['label' => __('Listas para revisión'), 'value' => $this->report['readyForReview'], 'filter' => 'review'],
             ['label' => __('Vencidas'), 'value' => $this->report['overdueDeliverables']],
             ['label' => __('Ciclo promedio (h)'), 'value' => number_format($this->report['averageCycleHours'], 1)],
         ])
 
         @foreach ($kpis as $kpi)
             <flux:card wire:key="dashboard-kpi-{{ $loop->index }}">
-                <flux:text>{{ $kpi['label'] }}</flux:text>
-                <flux:heading size="2xl" class="mt-1">{{ $kpi['value'] }}</flux:heading>
+                @if (isset($kpi['filter']))
+                    <button
+                        type="button"
+                        class="w-full text-start"
+                        wire:click="setWorkItemFilter('{{ $kpi['filter'] }}')"
+                        title="{{ __('Filtrar la tabla por listas para revisión') }}"
+                    >
+                        <flux:text>{{ $kpi['label'] }}</flux:text>
+                        <flux:heading size="2xl" class="mt-1">{{ $kpi['value'] }}</flux:heading>
+                    </button>
+                @else
+                    <flux:text>{{ $kpi['label'] }}</flux:text>
+                    <flux:heading size="2xl" class="mt-1">{{ $kpi['value'] }}</flux:heading>
+                @endif
             </flux:card>
         @endforeach
     </div>
@@ -156,83 +168,197 @@
     </div>
 
     <flux:card>
-        <div class="flex flex-wrap items-center justify-between gap-3">
-            <flux:heading size="sm">{{ __('Tareas recientes') }}</flux:heading>
-            <flux:text class="text-xs text-zinc-400">{{ __('Máximo 5 resultados · raíces y subtareas') }}</flux:text>
-        </div>
+        <div class="flex flex-wrap items-end justify-between gap-3">
+            <div>
+                <flux:heading size="sm">{{ __('Entregables recientes') }}</flux:heading>
+                <flux:text class="mt-1 text-xs text-zinc-400">
+                    {{ __('Tickets y tareas en una sola tabla · las subtareas se muestran al expandir.') }}
+                </flux:text>
+            </div>
 
-        <flux:table bleed container:class="mt-4">
-            <flux:table.columns>
-                <flux:table.column>{{ __('Tipo') }}</flux:table.column>
-                <flux:table.column>{{ __('Título') }}</flux:table.column>
-                <flux:table.column>{{ __('Responsable') }}</flux:table.column>
-                <flux:table.column>{{ __('Estado') }}</flux:table.column>
-                <flux:table.column>{{ __('Terminado') }}</flux:table.column>
-            </flux:table.columns>
-
-            <flux:table.rows>
-                @forelse ($this->report['recentTasks'] as $task)
-                    <flux:table.row wire:key="dashboard-recent-task-{{ $task->id }}">
-                        <flux:table.cell>
-                            <flux:badge size="sm" :color="$task->parent_id === null ? 'indigo' : 'amber'">
-                                {{ $task->parent_id === null ? __('Tarea') : __('Subtarea') }}
-                            </flux:badge>
-                        </flux:table.cell>
-                        <flux:table.cell variant="strong">
-                            <span class="block max-w-xs truncate" title="{{ $task->title }}">{{ $task->title }}</span>
-                            @if ($task->parent !== null)
-                                <flux:text class="text-xs">{{ __('Subtarea de: :title', ['title' => $task->parent->title]) }}</flux:text>
-                            @endif
-                        </flux:table.cell>
-                        <flux:table.cell>{{ $task->assignee?->name ?? __('Sin responsable') }}</flux:table.cell>
-                        <flux:table.cell class="py-0">
-                            <flux:badge size="sm" :color="$task->status->badgeColor()">
-                                {{ $task->status->label() }}
-                            </flux:badge>
-                        </flux:table.cell>
-                        <flux:table.cell>{{ $task->completed_at?->format('d/m/Y H:i') ?? '—' }}</flux:table.cell>
-                    </flux:table.row>
-                @empty
-                    <flux:table.row>
-                        <flux:table.cell colspan="5">
-                            <flux:text class="text-sm">{{ __('No hay tareas en el periodo seleccionado.') }}</flux:text>
-                        </flux:table.cell>
-                    </flux:table.row>
-                @endforelse
-            </flux:table.rows>
-        </flux:table>
-    </flux:card>
-
-    <flux:card>
-        <div class="flex flex-wrap items-center justify-between gap-3">
-            <flux:heading size="sm">{{ __('Listas para revisión') }}</flux:heading>
-            <flux:text class="text-xs text-zinc-400">
-                {{ __('Subtareas terminadas; el jefe da la aprobación final.') }}
-            </flux:text>
+            <flux:field class="w-full sm:w-56">
+                <flux:label>{{ __('Vista') }}</flux:label>
+                <flux:select wire:model.live="workItemFilter">
+                    <flux:select.option value="all">{{ __('Todos los recientes') }}</flux:select.option>
+                    <flux:select.option value="review">{{ __('Listas para revisión') }}</flux:select.option>
+                </flux:select>
+            </flux:field>
         </div>
 
         <flux:table bleed container:class="mt-4">
             <flux:table.columns>
                 <flux:table.column>{{ __('Entregable') }}</flux:table.column>
-                <flux:table.column>{{ __('Responsable') }}</flux:table.column>
-                <flux:table.column>{{ __('Subtareas') }}</flux:table.column>
-                <flux:table.column>{{ __('Área') }}</flux:table.column>
+                <flux:table.column class="w-48">{{ __('Progreso') }}</flux:table.column>
+                <flux:table.column>{{ __('Área / Prioridad') }}</flux:table.column>
+                <flux:table.column class="w-16">{{ __('Acciones') }}</flux:table.column>
             </flux:table.columns>
 
             <flux:table.rows>
-                @forelse ($this->report['readyForReviewTasks'] as $task)
-                    <flux:table.row wire:key="dashboard-review-task-{{ $task->id }}">
-                        <flux:table.cell variant="strong">
-                            <span class="block max-w-sm truncate" title="{{ $task->title }}">{{ $task->title }}</span>
+                @forelse ($this->workItems as $item)
+                    <flux:table.row wire:key="dashboard-work-item-{{ $item->key }}">
+                        <flux:table.cell class="align-top">
+                            <div class="flex items-start gap-2">
+                                <flux:badge size="sm" :color="$item->ticketId === null ? 'indigo' : 'sky'">
+                                    {{ $item->sourceLabel }}
+                                </flux:badge>
+
+                                <div class="min-w-0 flex-1">
+                                    @if ($item->hasSubtasks)
+                                        <button
+                                            type="button"
+                                            class="flex w-full items-center gap-1 text-start"
+                                            wire:click="toggleWorkItem('{{ $item->key }}')"
+                                            aria-expanded="{{ $expandedWorkItemId === $item->key ? 'true' : 'false' }}"
+                                        >
+                                            <span
+                                                class="block max-w-sm truncate text-sm font-medium text-zinc-800 dark:text-zinc-100"
+                                                title="{{ $item->displayTitle }}"
+                                            >
+                                                {{ $item->displayTitle }}
+                                            </span>
+                                            <flux:icon.chevron-down
+                                                class="size-4 shrink-0 text-zinc-400 transition"
+                                                :class="$expandedWorkItemId === $item->key ? 'rotate-180' : ''"
+                                            />
+                                        </button>
+                                    @else
+                                        <span
+                                            class="block max-w-sm truncate text-sm font-medium text-zinc-800 dark:text-zinc-100"
+                                            title="{{ $item->displayTitle }}"
+                                        >
+                                            {{ $item->displayTitle }}
+                                        </span>
+                                    @endif
+
+                                    <flux:text class="mt-0.5 text-xs">
+                                        {{ $item->assigneeName ?? __('Sin responsable') }}
+                                    </flux:text>
+
+                                    <div class="mt-1 flex flex-wrap items-center gap-2">
+                                        <flux:badge size="sm" :color="$item->status->badgeColor()">
+                                            {{ $item->status->label() }}
+                                        </flux:badge>
+                                        <flux:text class="text-xs text-zinc-400">
+                                            {{ __('por :name · :date', [
+                                                'name' => $item->statusChangedByName ?? __('Sistema'),
+                                                'date' => $item->statusChangedAt ?? '—',
+                                            ]) }}
+                                        </flux:text>
+                                        @if ($item->isReadyForReview)
+                                            <flux:badge size="sm" color="amber">
+                                                {{ __('Lista para revisión') }}
+                                            </flux:badge>
+                                        @endif
+                                    </div>
+                                </div>
+                            </div>
                         </flux:table.cell>
-                        <flux:table.cell>{{ $task->assignee?->name ?? __('Sin responsable') }}</flux:table.cell>
-                        <flux:table.cell>{{ $task->subtasks_done_count }}/{{ $task->subtasks_total_count }}</flux:table.cell>
-                        <flux:table.cell>{{ $task->area?->name ?? '—' }}</flux:table.cell>
+
+                        <flux:table.cell class="align-top">
+                            @if ($item->showProgressBar)
+                                <div class="flex items-center gap-2">
+                                    <flux:progress
+                                        :value="$item->progressPercent"
+                                        :color="$item->progressColor"
+                                        class="h-2 flex-1"
+                                    />
+                                    <flux:text class="whitespace-nowrap text-xs">
+                                        {{ $item->progressLabel }}
+                                    </flux:text>
+                                </div>
+                            @else
+                                <flux:badge size="sm" color="zinc">{{ __('Sin desglose') }}</flux:badge>
+                            @endif
+                        </flux:table.cell>
+
+                        <flux:table.cell class="align-top">
+                            <flux:text class="text-xs">{{ $item->areaName ?? '—' }}</flux:text>
+                            @if ($item->priority !== null)
+                                <div class="mt-1">
+                                    <flux:badge size="sm" :color="$item->priority->badgeColor()">
+                                        {{ $item->priority->label() }}
+                                    </flux:badge>
+                                </div>
+                            @endif
+                        </flux:table.cell>
+
+                        <flux:table.cell class="align-top">
+                            <flux:dropdown position="bottom" align="end">
+                                <flux:button
+                                    icon="ellipsis-horizontal"
+                                    size="xs"
+                                    variant="ghost"
+                                    :tooltip="__('Acciones')"
+                                />
+
+                                <flux:menu>
+                                    <flux:menu.item
+                                        icon="eye"
+                                        wire:click="openDetails('{{ $item->key }}')"
+                                    >
+                                        {{ __('Detalles') }}
+                                    </flux:menu.item>
+
+                                    @if ($item->ticketId !== null)
+                                        <flux:menu.item
+                                            icon="ticket"
+                                            :href="route('tickets.index', ['search' => $item->code])"
+                                        >
+                                            {{ __('Ver ticket') }}
+                                        </flux:menu.item>
+                                    @endif
+                                </flux:menu>
+                            </flux:dropdown>
+                        </flux:table.cell>
                     </flux:table.row>
+
+                    @if ($item->hasSubtasks && $expandedWorkItemId === $item->key)
+                        <flux:table.row wire:key="dashboard-work-item-detail-{{ $item->key }}">
+                            <flux:table.cell colspan="4">
+                                <div class="rounded-lg border border-zinc-200/80 bg-zinc-50 p-3 dark:border-zinc-700/60 dark:bg-zinc-900/40">
+                                    <flux:heading size="sm">
+                                        {{ __('Subtareas de :title', ['title' => $item->subject]) }} ·
+                                        {{ $item->progressLabel }}
+                                    </flux:heading>
+
+                                    <div class="mt-2 flex flex-col gap-2">
+                                        @forelse ($this->expandedSubtasks as $subtask)
+                                            <div
+                                                class="flex flex-wrap items-center justify-between gap-2 rounded-md bg-white px-3 py-2 text-sm dark:bg-zinc-900"
+                                                wire:key="dashboard-work-item-subtask-{{ $subtask->id }}"
+                                            >
+                                                <div class="min-w-0 flex-1">
+                                                    <span class="block truncate">{{ $subtask->title }}</span>
+                                                    <flux:text class="text-xs text-zinc-400">
+                                                        {{ __('Subtarea de: :title', ['title' => $item->subject]) }}
+                                                    </flux:text>
+                                                </div>
+                                                <flux:text class="text-xs">
+                                                    {{ $subtask->assignee?->name ?? __('Sin responsable') }}
+                                                </flux:text>
+                                                <flux:badge size="sm" :color="$subtask->status->badgeColor()">
+                                                    {{ $subtask->status->label() }}
+                                                </flux:badge>
+                                                <flux:text class="text-xs text-zinc-400">
+                                                    {{ $subtask->completed_at?->format('d/m/Y H:i') ?? '—' }}
+                                                </flux:text>
+                                            </div>
+                                        @empty
+                                            <flux:text class="text-sm">{{ __('Sin subtareas.') }}</flux:text>
+                                        @endforelse
+                                    </div>
+                                </div>
+                            </flux:table.cell>
+                        </flux:table.row>
+                    @endif
                 @empty
                     <flux:table.row>
                         <flux:table.cell colspan="4">
-                            <flux:text class="text-sm">{{ __('No hay entregables pendientes de revisión.') }}</flux:text>
+                            <flux:text class="text-sm">
+                                {{ $workItemFilter === 'review'
+                                    ? __('No hay entregables pendientes de revisión.')
+                                    : __('No hay entregables en el periodo seleccionado.') }}
+                            </flux:text>
                         </flux:table.cell>
                     </flux:table.row>
                 @endforelse
@@ -240,46 +366,103 @@
         </flux:table>
     </flux:card>
 
-    <flux:card>
-        <div class="flex flex-wrap items-center justify-between gap-3">
-            <flux:heading size="sm">{{ __('Tickets recientes') }}</flux:heading>
-            <flux:text class="text-xs text-zinc-400">{{ __('Máximo 5 resultados') }}</flux:text>
-        </div>
+    <flux:modal
+        wire:model.self="showDetailsModal"
+        name="work-item-details"
+        class="md:w-2xl"
+        @close="$wire.closeDetails()"
+    >
+        @if ($this->detailsWorkItem)
+            @php($detail = $this->detailsWorkItem)
+            <div class="flex flex-col gap-4">
+                <div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <flux:badge size="sm" :color="$detail->ticketId === null ? 'indigo' : 'sky'">
+                            {{ $detail->sourceLabel }}
+                        </flux:badge>
+                        <flux:badge size="sm" :color="$detail->status->badgeColor()">
+                            {{ $detail->status->label() }}
+                        </flux:badge>
+                    </div>
+                    <flux:heading size="lg" class="mt-2">{{ $detail->displayTitle }}</flux:heading>
+                    <flux:text class="mt-1">
+                        {{ $detail->description ?: __('Sin descripción.') }}
+                    </flux:text>
+                </div>
 
-        <flux:table bleed container:class="mt-4">
-            <flux:table.columns>
-                <flux:table.column>{{ __('Código') }}</flux:table.column>
-                <flux:table.column>{{ __('Asunto') }}</flux:table.column>
-                <flux:table.column>{{ __('Área') }}</flux:table.column>
-                <flux:table.column>{{ __('Categoría') }}</flux:table.column>
-                <flux:table.column>{{ __('Prioridad') }}</flux:table.column>
-                <flux:table.column>{{ __('Responsable') }}</flux:table.column>
-            </flux:table.columns>
+                <div class="grid gap-3 sm:grid-cols-2">
+                    <div>
+                        <flux:text class="text-xs">{{ __('Código') }}</flux:text>
+                        <p class="text-sm font-medium">{{ $detail->code ?? __('Creada en el tablero') }}</p>
+                    </div>
+                    <div>
+                        <flux:text class="text-xs">{{ __('Título') }}</flux:text>
+                        <p class="text-sm font-medium">{{ $detail->subject }}</p>
+                    </div>
+                    <div>
+                        <flux:text class="text-xs">{{ __('Área') }}</flux:text>
+                        <p class="text-sm font-medium">{{ $detail->areaName ?? '—' }}</p>
+                    </div>
+                    <div>
+                        <flux:text class="text-xs">{{ __('Categoría') }}</flux:text>
+                        <p class="text-sm font-medium">{{ $detail->categoryName ?? '—' }}</p>
+                    </div>
+                    <div>
+                        <flux:text class="text-xs">{{ __('Prioridad') }}</flux:text>
+                        <p class="text-sm font-medium">{{ $detail->priority?->label() ?? '—' }}</p>
+                    </div>
+                    <div>
+                        <flux:text class="text-xs">{{ __('Responsable') }}</flux:text>
+                        <p class="text-sm font-medium">{{ $detail->assigneeName ?? __('Sin responsable') }}</p>
+                    </div>
+                    <div>
+                        <flux:text class="text-xs">{{ __('Solicitante') }}</flux:text>
+                        <p class="text-sm font-medium">
+                            {{ $detail->requesterName ?? '—' }}
+                            @if ($detail->requesterEmail !== null)
+                                <span class="text-xs text-zinc-400">({{ $detail->requesterEmail }})</span>
+                            @endif
+                        </p>
+                    </div>
+                    <div>
+                        <flux:text class="text-xs">{{ __('Creado por') }}</flux:text>
+                        <p class="text-sm font-medium">{{ $detail->createdByName ?? '—' }}</p>
+                    </div>
+                    <div>
+                        <flux:text class="text-xs">{{ __('Último estado') }}</flux:text>
+                        <p class="text-sm font-medium">
+                            {{ $detail->statusChangedByName ?? __('Sistema') }} · {{ $detail->statusChangedAt ?? '—' }}
+                        </p>
+                    </div>
+                    <div>
+                        <flux:text class="text-xs">{{ __('Progreso') }}</flux:text>
+                        <p class="text-sm font-medium">{{ $detail->progressLabel }}</p>
+                    </div>
+                    <div>
+                        <flux:text class="text-xs">{{ __('Fecha de creación') }}</flux:text>
+                        <p class="text-sm font-medium">{{ $detail->createdAt }}</p>
+                    </div>
+                    <div>
+                        <flux:text class="text-xs">{{ __('Fecha de asignación') }}</flux:text>
+                        <p class="text-sm font-medium">{{ $detail->assignedAt ?? '—' }}</p>
+                    </div>
+                    <div>
+                        <flux:text class="text-xs">{{ __('Fecha de cierre') }}</flux:text>
+                        <p class="text-sm font-medium">{{ $detail->closedAt ?? '—' }}</p>
+                    </div>
+                </div>
 
-            <flux:table.rows>
-                @forelse ($this->report['recentTickets'] as $ticket)
-                    <flux:table.row wire:key="dashboard-recent-ticket-{{ $ticket->id }}">
-                        <flux:table.cell variant="strong">{{ $ticket->code }}</flux:table.cell>
-                        <flux:table.cell>
-                            <span class="block max-w-xs truncate" title="{{ $ticket->subject }}">{{ $ticket->subject }}</span>
-                        </flux:table.cell>
-                        <flux:table.cell>{{ $ticket->area?->name ?? '—' }}</flux:table.cell>
-                        <flux:table.cell>{{ $ticket->category?->name ?? '—' }}</flux:table.cell>
-                        <flux:table.cell class="py-0">
-                            <flux:badge size="sm" :color="$ticket->priority->badgeColor()">
-                                {{ $ticket->priority->label() }}
-                            </flux:badge>
-                        </flux:table.cell>
-                        <flux:table.cell>{{ $ticket->assignee?->name ?? __('Sin responsable') }}</flux:table.cell>
-                    </flux:table.row>
-                @empty
-                    <flux:table.row>
-                        <flux:table.cell colspan="6">
-                            <flux:text class="text-sm">{{ __('No hay tickets en el periodo seleccionado.') }}</flux:text>
-                        </flux:table.cell>
-                    </flux:table.row>
-                @endforelse
-            </flux:table.rows>
-        </flux:table>
-    </flux:card>
+                <div class="flex justify-end gap-2">
+                    @if ($detail->ticketId !== null)
+                        <flux:button variant="ghost" :href="route('tickets.index', ['search' => $detail->code])" icon="ticket">
+                            {{ __('Ver ticket') }}
+                        </flux:button>
+                    @endif
+                    <flux:modal.close>
+                        <flux:button variant="ghost">{{ __('Cerrar') }}</flux:button>
+                    </flux:modal.close>
+                </div>
+            </div>
+        @endif
+    </flux:modal>
 </div>
