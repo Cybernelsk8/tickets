@@ -2,8 +2,8 @@
 
 > Documento vivo. Cualquier IA o persona que continue el proyecto debe leer este archivo, `ia/requerimientos.md` e `ia/avances.md` antes de modificar código.
 >
-> Última actualización: 2026-11-19
-> Estado: **Fase 3 completada; Fase 4 lista para iniciar**
+> Última actualización: 2026-11-20
+> Estado: **Fases 0 a 6 completadas; Fase 7 pendiente**
 
 ---
 
@@ -39,8 +39,8 @@ Correo (IMAP) → Mensaje/Hilo → Ticket → Asignación (área/categoría/pers
 | Correo saliente | `MAIL_MAILER=log` (configurar SMTP real cuando se necesite) |
 | Permisos Spatie | **Instalado** (`spatie/laravel-permission` 8.5.0), configuración y migración publicadas |
 | Cliente IMAP | **Integrado** (`webklex/php-imap` 6.2.0) detrás de `MailClient`; sincronización probada con cliente falso, sin red |
-| ApexCharts | **Instalado** (`apexcharts` npm 8.9.1); aún sin integrar |
-| Pruebas | Pest 4 + plugin Laravel; Pint, PHPStan/Larastan configurados y en verde (94 tests) |
+| ApexCharts | **Instalado e integrado** (`apexcharts` npm 8.9.1) en el dashboard |
+| Pruebas | Pest 4 + plugin Laravel; Pint, PHPStan/Larastan configurados y en verde (185 tests) |
 | Rutas actuales | `/`, `/dashboard`, `/mail/inbox`, `/mail/accounts`, `/attachments/{attachment}`, `/tickets`, `/boards`, `/tasks/mine`, `/settings` |
 
 **Convenciones a respetar:** componentes Livewire de clase (no SFC, aunque Livewire 4 por defecto cree SFC), Layout `x-layouts::app`, rutas en `routes/web.php` / `routes/settings.php`, controladores y modelos con `php artisan make:`, PHP 8.3 con tipos y `curly braces`, Pest para pruebas, Pint al final de cada cambio PHP.
@@ -58,7 +58,7 @@ Correo (IMAP) → Mensaje/Hilo → Ticket → Asignación (área/categoría/pers
 | D3 | Autenticación de correo | ✅ Usuario/contraseña cifrados en `mail_accounts.credentials` (`cast: encrypted` + `hidden`) | OAuth2 queda para fase posterior |
 | D4 | Proveedor de correo | ⏳ Aceptado por defecto: IMAP + SMTP genéricos | Define campos ya creados en la migración |
 | D5 | Organización | ✅ Aplicado: `users.area_id`, `areas.manager_id`, `areas.parent_id` | Base para policies por área |
-| D6 | Estados del Kanban | ✅ Aplicado en `TaskStatus`: `todo`, `assigned`, `in_progress`, `testing`, `done`, `blocked`; agrupación en 4 columnas vía `kanbanColumn()` | Falta el tablero visual en Fase 4 |
+| D6 | Estados del Kanban | ✅ Aplicado en `TaskStatus`: `todo`, `assigned`, `in_progress`, `testing`, `done`, `blocked`; agrupación en 3 columnas vía `kanbanColumn()` | Tablero visual entregado en Fase 4 |
 | D7 | Dependencias entre subtareas | ✅ Aceptado por defecto: solo `finish_to_start` | Motor de validación pendiente en Fase 4 |
 | D8 | Adjuntos | ✅ Implementado: disco privado `local`, límite configurable (25 MB por defecto), nombre/extensión saneados y descarga por ruta autorizada. Falta una política MIME/allowlist más estricta y storage remoto en producción | Seguridad y coste |
 | D9 | Correo de notificación | ✅ Implementado: evento `TicketAssigned` y `TicketAssignedMail` encolado al remitente; SMTP real pendiente para producción | Con `log` solo se verá en logs |

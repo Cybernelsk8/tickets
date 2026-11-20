@@ -19,25 +19,34 @@ class BuildDashboardReport
     /**
      * Build every aggregate shown on the dashboard for the given user.
      *
+     * Root tasks are the deliverables that count as completed work. Subtasks
+     * only report operational progress and never close a deliverable.
+     *
      * @param  array{from?: string|null, to?: string|null, area_id?: int|string|null, category_id?: int|string|null, assignee_id?: int|string|null}  $filters
      * @return array{
      *     scopeLabel: string,
      *     filters: array{from: string, to: string, area_id: int|null, category_id: int|null, assignee_id: int|null},
      *     totalTickets: int,
      *     openTickets: int,
-     *     totalTasks: int,
-     *     completedTasks: int,
-     *     completionRate: float,
-     *     overdueTasks: int,
+     *     totalDeliverables: int,
+     *     completedDeliverables: int,
+     *     deliverableCompletionRate: float,
+     *     overdueDeliverables: int,
+     *     totalSubtasks: int,
+     *     completedSubtasks: int,
+     *     subtaskProgressRate: float,
+     *     readyForReview: int,
      *     averageCycleHours: float,
      *     statusSeries: array<int, array{label: string, value: int}>,
      *     areaSeries: array<int, array{label: string, value: int}>,
      *     prioritySeries: array<int, array{label: string, value: int}>,
      *     categorySeries: array<int, array{label: string, value: int}>,
      *     weeklySeries: array{categories: array<int, string>, values: array<int, int>},
-     *     workloadSeries: array<int, array{label: string, value: int}>,
+     *     workloadSeries: array<int, array{label: string, active: int, completed: int}>,
      *     stageAverages: array<int, array{label: string, hours: float}>,
-     *     recentTickets: Collection<int, Ticket>
+     *     recentTickets: Collection<int, Ticket>,
+     *     recentTasks: Collection<int, Task>,
+     *     readyForReviewTasks: Collection<int, Task>
      * }
      */
     public function handle(User $user, array $filters = []): array
@@ -59,26 +68,40 @@ class BuildDashboardReport
             ->whereBetween('created_at', [$from, $to]);
         $this->applyTaskFilters($taskQuery, $categoryId, $assigneeId, $personalScope, $user);
 
+        /** @var Builder<Task> $deliverableQuery */
+        $deliverableQuery = (clone $taskQuery)->roots();
+
+        /** @var Builder<Task> $subtaskQuery */
+        $subtaskQuery = (clone $taskQuery)->subtasks();
+
+        /** @var Builder<Task> $readyForReviewQuery */
+        $readyForReviewQuery = (clone $deliverableQuery)->readyForReview();
+
         $totalTickets = (clone $ticketQuery)->count();
         $openTickets = (clone $ticketQuery)
             ->whereNot('status', TaskStatus::Done->value)
             ->count();
-        $totalTasks = (clone $taskQuery)->count();
-        $completedTasks = (clone $taskQuery)
+        $totalDeliverables = (clone $deliverableQuery)->count();
+        $completedDeliverables = (clone $deliverableQuery)
             ->where('status', TaskStatus::Done->value)
             ->count();
-        $overdueTasks = (clone $taskQuery)
+        $overdueDeliverables = (clone $deliverableQuery)
             ->whereNotNull('due_at')
             ->where('due_at', '<', now())
             ->whereNot('status', TaskStatus::Done->value)
             ->count();
+        $totalSubtasks = (clone $subtaskQuery)->count();
+        $completedSubtasks = (clone $subtaskQuery)
+            ->where('status', TaskStatus::Done->value)
+            ->count();
+        $readyForReview = (clone $readyForReviewQuery)->count();
 
-        $statusRows = (clone $taskQuery)
+        $statusRows = (clone $deliverableQuery)
             ->select('status')
             ->selectRaw('COUNT(*) as total')
             ->groupBy('status')
             ->pluck('total', 'status');
-        $areaRows = (clone $taskQuery)
+        $areaRows = (clone $deliverableQuery)
             ->select('area_id')
             ->selectRaw('COUNT(*) as total')
             ->groupBy('area_id')
@@ -93,12 +116,33 @@ class BuildDashboardReport
             ->selectRaw('COUNT(*) as total')
             ->groupBy('category_id')
             ->pluck('total', 'category_id');
-        $workloadRows = (clone $taskQuery)
-            ->whereNotIn('status', [TaskStatus::Done->value])
+
+        /** @var Collection<int|string, int|string> $activeWorkloadRows */
+        $activeWorkloadRows = (clone $taskQuery)
+            ->whereNot('status', TaskStatus::Done->value)
             ->select('assignee_id')
             ->selectRaw('COUNT(*) as total')
             ->groupBy('assignee_id')
             ->pluck('total', 'assignee_id');
+
+        /** @var Collection<int|string, int|string> $completedWorkloadRows */
+        $completedWorkloadRows = (clone $taskQuery)
+            ->where('status', TaskStatus::Done->value)
+            ->select('assignee_id')
+            ->selectRaw('COUNT(*) as total')
+            ->groupBy('assignee_id')
+            ->pluck('total', 'assignee_id');
+
+        /** @var Collection<int|string, array{active: int, completed: int}> $workloadRows */
+        $workloadRows = $activeWorkloadRows
+            ->map(fn (int|string $total, int|string $assigneeId): array => [
+                'active' => (int) $total,
+                'completed' => (int) ($completedWorkloadRows[$assigneeId] ?? 0),
+            ])
+            ->union($completedWorkloadRows->map(fn (int|string $total): array => [
+                'active' => 0,
+                'completed' => (int) $total,
+            ]));
 
         $areaNames = Area::query()
             ->whereIn('id', $areaRows->keys())
@@ -106,18 +150,21 @@ class BuildDashboardReport
         $categoryNames = TicketCategory::query()
             ->whereIn('id', $categoryRows->keys())
             ->pluck('name', 'id');
+        $workloadUserIds = $workloadRows->keys()
+            ->filter(fn (int|string $id): bool => $id !== '')
+            ->all();
         $userNames = User::query()
-            ->whereIn('id', $workloadRows->keys()->filter(fn (int|string $id): bool => $id !== ''))
+            ->whereIn('id', $workloadUserIds)
             ->pluck('name', 'id');
 
-        $stageRows = (clone $taskQuery)
+        $stageRows = (clone $deliverableQuery)
             ->selectRaw('AVG(TIMESTAMPDIFF(HOUR, started_at, testing_at)) as to_testing')
             ->selectRaw('AVG(TIMESTAMPDIFF(HOUR, testing_at, completed_at)) as to_done')
             ->selectRaw('AVG(TIMESTAMPDIFF(HOUR, started_at, completed_at)) as total_cycle')
             ->first();
         $stageMetrics = $stageRows instanceof Task ? $stageRows->getAttributes() : [];
 
-        $weeklyRows = (clone $taskQuery)
+        $weeklyRows = (clone $deliverableQuery)
             ->selectRaw("DATE_FORMAT(created_at, '%x-W%v') as week, COUNT(*) as total")
             ->groupBy('week')
             ->pluck('total', 'week');
@@ -133,6 +180,31 @@ class BuildDashboardReport
             ->limit(5)
             ->get();
 
+        $recentTasks = (clone $taskQuery)
+            ->with([
+                'parent:id,title',
+                'assignee:id,name',
+                'area:id,name',
+            ])
+            ->orderByRaw('COALESCE(completed_at, created_at) DESC')
+            ->orderByDesc('id')
+            ->limit(5)
+            ->get();
+
+        $readyForReviewTasks = (clone $readyForReviewQuery)
+            ->with([
+                'assignee:id,name',
+                'area:id,name',
+            ])
+            ->withCount([
+                'children as subtasks_total_count',
+                'children as subtasks_done_count' => fn (Builder $query): mixed => $query
+                    ->where('status', TaskStatus::Done->value),
+            ])
+            ->orderByDesc('updated_at')
+            ->limit(5)
+            ->get();
+
         return [
             'scopeLabel' => $this->scopeLabel($user, $personalScope),
             'filters' => [
@@ -144,12 +216,18 @@ class BuildDashboardReport
             ],
             'totalTickets' => $totalTickets,
             'openTickets' => $openTickets,
-            'totalTasks' => $totalTasks,
-            'completedTasks' => $completedTasks,
-            'completionRate' => $totalTasks > 0
-                ? round($completedTasks / $totalTasks * 100, 1)
+            'totalDeliverables' => $totalDeliverables,
+            'completedDeliverables' => $completedDeliverables,
+            'deliverableCompletionRate' => $totalDeliverables > 0
+                ? round($completedDeliverables / $totalDeliverables * 100, 1)
                 : 0.0,
-            'overdueTasks' => $overdueTasks,
+            'overdueDeliverables' => $overdueDeliverables,
+            'totalSubtasks' => $totalSubtasks,
+            'completedSubtasks' => $completedSubtasks,
+            'subtaskProgressRate' => $totalSubtasks > 0
+                ? round($completedSubtasks / $totalSubtasks * 100, 1)
+                : 0.0,
+            'readyForReview' => $readyForReview,
             'averageCycleHours' => round((float) ($stageMetrics['total_cycle'] ?? 0), 1),
             'statusSeries' => collect(TaskStatus::cases())->map(fn (TaskStatus $status): array => [
                 'label' => $status->label(),
@@ -175,11 +253,12 @@ class BuildDashboardReport
                 ->all(),
             'weeklySeries' => $this->weeklySeries($from, $to, $weeklyRows),
             'workloadSeries' => $workloadRows
-                ->map(fn (int|string $total, int|string $assigneeId): array => [
+                ->map(fn (array $counts, int|string $assigneeId): array => [
                     'label' => $assigneeId === ''
                         ? __('Sin responsable')
                         : (string) ($userNames[$assigneeId] ?? __('Sin responsable')),
-                    'value' => (int) $total,
+                    'active' => $counts['active'],
+                    'completed' => $counts['completed'],
                 ])
                 ->values()
                 ->all(),
@@ -189,6 +268,8 @@ class BuildDashboardReport
                 ['label' => __('Ciclo total'), 'hours' => round((float) ($stageMetrics['total_cycle'] ?? 0), 1)],
             ],
             'recentTickets' => $recentTickets,
+            'recentTasks' => $recentTasks,
+            'readyForReviewTasks' => $readyForReviewTasks,
         ];
     }
 

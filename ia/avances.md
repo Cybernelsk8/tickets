@@ -16,8 +16,48 @@
 | 3 — Ticket y notificación | ✅ Completada | Conversión desde bandeja, asignación, tarea raíz y correo encolado al remitente |
 | 4 — Kanban/proyectos | ✅ Completada | Tablero único de 3 columnas, scopes, DnD, subtareas, dependencias, tiempos y vista detalle |
 | 5 — Colaborador/trazabilidad | ✅ Completada | Mis tareas, comentarios/adjuntos privados, evidencia antes de Done y notificación al superior |
-| 6 — Dashboard | ✅ Completada | KPIs agregados/indexados, gráficas ApexCharts, filtros y permisos por rol |
+| 6 — Dashboard | ✅ Completada | KPIs agregados/indexados, gráficas ApexCharts, filtros y permisos por rol; ajustado con regla “raíz manda” para separar entregables de subtareas |
 | 7 — Hardening | ⏳ Pendiente | Colas, scheduler, seguridad, pruebas finales |
+
+---
+
+## 2026-11-20 — Fase 6: ajuste “raíz manda” en dashboard y cierre ✅
+
+- **Fase:** 6 (Dashboard), ajuste funcional derivado de la revisión de KPIs con el usuario.
+- **Qué se hizo:**
+    - Separado el reporte en **entregables** (`tasks.parent_id IS NULL`) y **subtareas** (`tasks.parent_id IS NOT NULL`). Los KPIs de productividad ahora cuentan solo entregables; las subtareas reportan avance operativo.
+    - Renovados los KPIs: `Entregables`, `Entregables terminados`, `% entregables terminados`, `Subtareas terminadas`, `Avance del desglose`, `Listas para revisión` y `Vencidas`. Las gráficas de estado, área, tendencia y tiempos por etapa usan entregables; prioridad y categoría siguen usando tickets.
+    - La carga por colaborador ahora muestra **activas y terminadas**, de modo que quien entrega no desaparece de la gráfica.
+    - Añadidas las tablas `Tareas recientes` (con badge `Tarea`/`Subtarea`, `Subtarea de: …`, responsable, estado y fecha de terminación) y `Listas para revisión` (raíces con todas sus subtareas terminadas y aún no aprobadas).
+    - Agregados los scopes `roots()`, `subtasks()` y `readyForReview()` en `App\Models\Task` para centralizar las reglas de nivel de tarea.
+    - `MoveTask` ahora impide aprobar una raíz con subtareas pendientes, exige el ability `approve` para la aprobación final de raíces desglosadas y no cambia el estado de la raíz al terminar la última subtarea.
+    - Creado `App\Actions\Tickets\CloseTicketWhenRootDone`: cuando una raíz llega a `Terminado`, cierra el ticket asociado y fija `closed_at`. Las tareas raíz sin subtareas pueden ser terminadas directamente por su responsable, manteniendo el flujo simple.
+    - `TaskPolicy::approve()` reutiliza permisos existentes: `super_admin`, `tickets.viewAny` o jefe que gestione el área. No se crearon permisos nuevos.
+    - Actualizado `tests/Feature/DashboardReportTest.php` y creado `tests/Feature/TaskCompletionRulesTest.php` con los casos de colaborador, desglose parcial, aprobación final, cierre de ticket y asignación directa.
+- **Hallazgos:**
+    - El dashboard anterior mezclaba raíces y subtareas: una sola subtarea terminada podía mostrar `100 % completadas` mientras la raíz seguía en `Pruebas` y el ticket en `Assigned`.
+    - `Tickets recientes` solo consulta `tickets`, por eso el trabajo terminado de un colaborador asignado a subtareas no aparecía ahí.
+    - No existía ninguna acción que sincronizara `tickets.status` ni `tickets.closed_at` al terminar la tarea raíz.
+- **Decisiones:**
+    - Regla acordada con el usuario: **raíz manda**. La raíz es la unidad de entrega; las subtareas son seguimiento y nunca cierran la entrega por sí solas.
+    - Terminar todas las subtareas deja la raíz en `Listas para revisión`; el jefe/permiso global hace el pase final a `Terminado`.
+    - Una raíz sin subtareas sí puede ser finalizada por el colaborador asignado, para no penalizar el trabajo simple.
+    - La aprobación final de raíces desglosadas no usa permisos nuevos: reutiliza `tickets.viewAny` y la gestión del área.
+    - El alcance por `area_id`/`assignee_id` y el filtro por fecha de creación se mantienen sin cambios.
+- **Archivos creados/modificados (resumen):**
+    - Nuevos: `app/Actions/Tickets/CloseTicketWhenRootDone.php`, `tests/Feature/TaskCompletionRulesTest.php`.
+    - Modificados: `app/Actions/Reports/BuildDashboardReport.php`, `app/Models/Task.php`, `app/Actions/Tasks/MoveTask.php`, `app/Policies/TaskPolicy.php`, `app/Livewire/Dashboard/Index.php`, `resources/views/livewire/dashboard/index.blade.php`, `tests/Feature/DashboardReportTest.php`, `ia/avances.md`.
+- **Pruebas ejecutadas:**
+    - `php artisan test --compact tests/Feature/DashboardReportTest.php tests/Feature/TaskCompletionRulesTest.php tests/Feature/MoveTaskTest.php tests/Feature/CreateTaskTest.php` → **26/26 en verde, 104 aserciones**.
+    - `php artisan test --compact` → **185/185 en verde, 581 aserciones**.
+    - `vendor/bin/phpstan analyse --no-progress` → **0 errores** tras corregir los genéricos de `Collection` en la carga por colaborador.
+    - `vendor/bin/pint --dirty --format agent` → aplicado.
+    - `npm run build` → correcto; solo advertencias conocidas de tamaño del bundle y `fontaine` opcional.
+- **Problemas / bloqueos resueltos:**
+    - PHPStan rechazó `Collection<int|string|null, …>` porque las claves de una colección no pueden ser `null`. Los valores `NULL` de `assignee_id` llegan como clave `''`; se ajustaron las anotaciones y comparaciones a `int|string` con centinela `''`.
+    - Existía una aparente contradicción entre “solo el jefe aprueba” y “el colaborador puede terminar la tarea asignada directamente”: se resolvió exigiendo aprobación únicamente cuando la raíz tiene subtareas.
+- **Próximo paso:** Fase 7 — Hardening y entrega: SMTP real, `storage:link`, queue worker, scheduler, rate limiting, seeders de demostración y verificación final de extremo a extremo. Queda además publicar el commit local pendiente cuando haya credenciales de GitHub disponibles.
+- **Checklist del plan actualizado:** sí, Fase 6 queda documentada con la regla “raíz manda”.
 
 ---
 

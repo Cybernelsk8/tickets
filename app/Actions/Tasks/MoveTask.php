@@ -2,6 +2,7 @@
 
 namespace App\Actions\Tasks;
 
+use App\Actions\Tickets\CloseTicketWhenRootDone;
 use App\Mail\TaskStatusChangedMail;
 use App\Models\Task;
 use App\Models\TaskStatusTransition;
@@ -15,6 +16,8 @@ use Illuminate\Validation\ValidationException;
 
 class MoveTask
 {
+    public function __construct(private CloseTicketWhenRootDone $closeTicketWhenRootDone) {}
+
     /**
      * Move a task to another board status, persisting its position and history.
      */
@@ -53,8 +56,27 @@ class MoveTask
             ]);
         }
 
+        $requiresFinalReview = $statusChanged
+            && $status === TaskStatus::Done
+            && $task->parent_id === null
+            && $task->children()->exists();
+
+        if ($requiresFinalReview) {
+            Gate::authorize('approve', $task);
+
+            if ($this->hasUnfinishedSubtasks($task)) {
+                throw ValidationException::withMessages([
+                    'board' => __('La tarea tiene subtareas que aún no están terminadas.'),
+                ]);
+            }
+        }
+
         DB::transaction(function () use ($task, $status, $position, $previousStatus, $statusChanged): void {
             $task->update($this->statusAttributes($task, $status));
+
+            if ($status === TaskStatus::Done) {
+                $this->closeTicketWhenRootDone->handle($task);
+            }
 
             $columnQuery = Task::query()
                 ->where('area_id', $task->area_id)
@@ -143,6 +165,16 @@ class MoveTask
     {
         return $task->dependencies()
             ->whereHas('dependsOnTask', fn ($query) => $query->where('status', '!=', TaskStatus::Done->value))
+            ->exists();
+    }
+
+    /**
+     * Determine whether any subtask still prevents the final review.
+     */
+    private function hasUnfinishedSubtasks(Task $task): bool
+    {
+        return $task->children()
+            ->whereNot('status', TaskStatus::Done->value)
             ->exists();
     }
 }

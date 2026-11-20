@@ -59,9 +59,9 @@ it('builds global aggregates for a super admin within the selected period', func
     expect($report['scopeLabel'])->toBe('Todas las áreas')
         ->and($report['totalTickets'])->toBe(1)
         ->and($report['openTickets'])->toBe(1)
-        ->and($report['totalTasks'])->toBe(2)
-        ->and($report['completedTasks'])->toBe(1)
-        ->and($report['completionRate'])->toBe(50.0)
+        ->and($report['totalDeliverables'])->toBe(2)
+        ->and($report['completedDeliverables'])->toBe(1)
+        ->and($report['deliverableCompletionRate'])->toBe(50.0)
         ->and($statusValues['Terminado'])->toBe(1)
         ->and($statusValues['Por hacer'])->toBe(1)
         ->and($report['recentTickets'])->toHaveCount(1)
@@ -110,7 +110,7 @@ it('limits collaborators without report permissions to their own data', function
 
     expect($report['scopeLabel'])->toBe('Mis datos')
         ->and($report['totalTickets'])->toBe(1)
-        ->and($report['totalTasks'])->toBe(1)
+        ->and($report['totalDeliverables'])->toBe(1)
         ->and($report['filters']['assignee_id'])->toBe($collaborator->id);
 });
 
@@ -168,7 +168,7 @@ it('applies date, area, category and assignee filters together', function () {
     ]);
 
     expect($report['totalTickets'])->toBe(1)
-        ->and($report['totalTasks'])->toBe(1)
+        ->and($report['totalDeliverables'])->toBe(1)
         ->and($report['filters']['area_id'])->toBe($area->id)
         ->and($report['filters']['category_id'])->toBe($category->id)
         ->and($report['filters']['assignee_id'])->toBe($assignee->id);
@@ -186,8 +186,10 @@ it('renders dashboard KPIs, charts and recent tickets in Livewire', function () 
         ->assertOk()
         ->assertSee('Dashboard')
         ->assertSee('Todas las áreas')
-        ->assertSee('Tareas por estado')
-        ->assertSee('Tendencia semanal de tareas creadas')
+        ->assertSee('Entregables por estado')
+        ->assertSee('Tareas recientes')
+        ->assertSee('Listas para revisión')
+        ->assertSee('Tendencia semanal de entregables creados')
         ->assertSeeHtml('apex-chart-status-')
         ->assertSeeHtml('data-flux-table')
         ->assertSeeHtml('&lt;script&gt;')
@@ -211,4 +213,92 @@ it('does not render data outside the manager area and clears dashboard filters',
         ->assertSet('areaId', null)
         ->assertSet('from', now()->subDays(30)->toDateString())
         ->assertSet('to', now()->toDateString());
+});
+
+it('reports subtask progress without counting it as a finished deliverable', function () {
+    $area = Area::factory()->create();
+    $manager = User::factory()->jefeArea()->create(['area_id' => $area->id]);
+    $collaborator = User::factory()->colaborador()->create(['area_id' => $area->id]);
+
+    $root = Task::factory()->create([
+        'area_id' => $area->id,
+        'assignee_id' => $manager->id,
+        'status' => TaskStatus::Testing,
+        'title' => 'Entregable pendiente',
+    ]);
+
+    $subtask = Task::factory()->childOf($root)->done()->create([
+        'area_id' => $area->id,
+        'assignee_id' => $collaborator->id,
+        'title' => 'Subtarea terminada',
+    ]);
+
+    $report = (new BuildDashboardReport)->handle($collaborator);
+
+    $workload = collect($report['workloadSeries'])->firstWhere('label', $collaborator->name);
+
+    expect($report['totalDeliverables'])->toBe(0)
+        ->and($report['completedDeliverables'])->toBe(0)
+        ->and($report['deliverableCompletionRate'])->toBe(0.0)
+        ->and($report['totalSubtasks'])->toBe(1)
+        ->and($report['completedSubtasks'])->toBe(1)
+        ->and($report['subtaskProgressRate'])->toBe(100.0)
+        ->and($report['readyForReview'])->toBe(0)
+        ->and($report['recentTasks']->pluck('id')->all())->toBe([$subtask->id])
+        ->and($report['recentTasks']->first()->parent->title)->toBe('Entregable pendiente')
+        ->and($workload['active'])->toBe(0)
+        ->and($workload['completed'])->toBe(1);
+});
+
+it('only marks roots with all subtasks done as ready for review', function () {
+    $admin = User::factory()->superAdmin()->create();
+    $area = Area::factory()->create();
+
+    $ready = Task::factory()->create([
+        'area_id' => $area->id,
+        'status' => TaskStatus::Testing,
+        'title' => 'Listo para revisión',
+    ]);
+    Task::factory()->childOf($ready)->done()->create(['area_id' => $area->id]);
+
+    $pending = Task::factory()->create([
+        'area_id' => $area->id,
+        'status' => TaskStatus::Testing,
+        'title' => 'Aún con trabajo',
+    ]);
+    Task::factory()->childOf($pending)->done()->create(['area_id' => $area->id]);
+    Task::factory()->childOf($pending)->create([
+        'area_id' => $area->id,
+        'status' => TaskStatus::Todo,
+    ]);
+
+    $report = (new BuildDashboardReport)->handle($admin);
+
+    expect($report['readyForReview'])->toBe(1)
+        ->and($report['readyForReviewTasks']->pluck('id')->all())->toBe([$ready->id])
+        ->and($report['readyForReviewTasks']->first()->subtasks_done_count)->toBe(1)
+        ->and($report['readyForReviewTasks']->first()->subtasks_total_count)->toBe(1);
+});
+
+it('renders a collaborator subtask with its parent in the dashboard table', function () {
+    $area = Area::factory()->create();
+    $manager = User::factory()->jefeArea()->create(['area_id' => $area->id]);
+    $collaborator = User::factory()->colaborador()->create(['area_id' => $area->id]);
+
+    $root = Task::factory()->create([
+        'area_id' => $area->id,
+        'assignee_id' => $manager->id,
+        'status' => TaskStatus::Testing,
+        'title' => 'Entregable visible',
+    ]);
+    Task::factory()->childOf($root)->done()->create([
+        'area_id' => $area->id,
+        'assignee_id' => $collaborator->id,
+        'title' => 'Subtarea del colaborador',
+    ]);
+
+    Livewire::actingAs($collaborator)->test(DashboardIndex::class)
+        ->assertSee('Subtarea del colaborador')
+        ->assertSee('Subtarea de: Entregable visible')
+        ->assertDontSee('Entregable terminado');
 });

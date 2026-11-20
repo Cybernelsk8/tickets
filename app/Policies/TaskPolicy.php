@@ -81,6 +81,14 @@ class TaskPolicy
     }
 
     /**
+     * Determine whether the user can approve a reviewed deliverable.
+     */
+    public function approve(User $user, Task $task): bool
+    {
+        return $user->can('tickets.viewAny') || $this->managesTaskArea($user, $task);
+    }
+
+    /**
      * Determine whether the user can delete the model.
      */
     public function delete(User $user, Task $task): bool

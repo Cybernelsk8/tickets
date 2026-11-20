@@ -120,10 +120,10 @@ class Index extends Component
             'area' => [
                 'key' => 'area-'.$key,
                 'series' => [[
-                    'name' => __('Tareas'),
+                    'name' => __('Entregables'),
                     'data' => array_column($report['areaSeries'], 'value'),
                 ]],
-                'options' => $this->barOptions(array_column($report['areaSeries'], 'label'), '#6366f1'),
+                'options' => $this->barOptions(array_column($report['areaSeries'], 'label'), ['#6366f1']),
             ],
             'category' => [
                 'key' => 'category-'.$key,
@@ -131,12 +131,12 @@ class Index extends Component
                     'name' => __('Tickets'),
                     'data' => array_column($report['categorySeries'], 'value'),
                 ]],
-                'options' => $this->barOptions(array_column($report['categorySeries'], 'label'), '#0ea5e9'),
+                'options' => $this->barOptions(array_column($report['categorySeries'], 'label'), ['#0ea5e9']),
             ],
             'weekly' => [
                 'key' => 'weekly-'.$key,
                 'series' => [[
-                    'name' => __('Tareas creadas'),
+                    'name' => __('Entregables creados'),
                     'data' => $report['weeklySeries']['values'],
                 ]],
                 'options' => [
@@ -151,11 +151,20 @@ class Index extends Component
             ],
             'workload' => [
                 'key' => 'workload-'.$key,
-                'series' => [[
-                    'name' => __('Tareas activas'),
-                    'data' => array_column($report['workloadSeries'], 'value'),
-                ]],
-                'options' => $this->barOptions(array_column($report['workloadSeries'], 'label'), '#22c55e'),
+                'series' => [
+                    [
+                        'name' => __('Tareas activas'),
+                        'data' => array_column($report['workloadSeries'], 'active'),
+                    ],
+                    [
+                        'name' => __('Tareas terminadas'),
+                        'data' => array_column($report['workloadSeries'], 'completed'),
+                    ],
+                ],
+                'options' => $this->barOptions(
+                    array_column($report['workloadSeries'], 'label'),
+                    ['#6366f1', '#22c55e'],
+                ),
             ],
         ];
     }
@@ -209,16 +218,17 @@ class Index extends Component
 
     /**
      * @param  array<int, string>  $categories
+     * @param  array<int, string>  $colors
      * @return array<string, mixed>
      */
-    private function barOptions(array $categories, string $color): array
+    private function barOptions(array $categories, array $colors): array
     {
         return [
             'chart' => ['type' => 'bar', 'height' => 280, 'toolbar' => ['show' => false]],
             'xaxis' => ['categories' => $categories],
             'plotOptions' => ['bar' => ['borderRadius' => 4, 'columnWidth' => '55%']],
             'dataLabels' => ['enabled' => false],
-            'colors' => [$color],
+            'colors' => $colors,
             'grid' => ['borderColor' => '#e4e4e7', 'strokeDashArray' => 3],
             'noData' => ['text' => __('Sin datos en el periodo')],
         ];

@@ -3,7 +3,7 @@
         <div>
             <flux:heading size="xl">{{ __('Dashboard') }}</flux:heading>
             <flux:text class="mt-1">
-                {{ __('Indicadores de tickets y tareas') }} · {{ $this->report['scopeLabel'] }}
+                {{ __('Indicadores de entregables, subtareas y tickets') }} · {{ $this->report['scopeLabel'] }}
             </flux:text>
         </div>
 
@@ -68,13 +68,17 @@
         </flux:text>
     </flux:card>
 
-    <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         @php($kpis = [
             ['label' => __('Total de tickets'), 'value' => $this->report['totalTickets']],
             ['label' => __('Tickets abiertos'), 'value' => $this->report['openTickets']],
-            ['label' => __('Tareas terminadas'), 'value' => $this->report['completedTasks']],
-            ['label' => __('% completadas'), 'value' => number_format($this->report['completionRate'], 1).' %'],
-            ['label' => __('Vencidas'), 'value' => $this->report['overdueTasks']],
+            ['label' => __('Entregables'), 'value' => $this->report['totalDeliverables']],
+            ['label' => __('Entregables terminados'), 'value' => $this->report['completedDeliverables']],
+            ['label' => __('% entregables terminados'), 'value' => number_format($this->report['deliverableCompletionRate'], 1).' %'],
+            ['label' => __('Subtareas terminadas'), 'value' => $this->report['completedSubtasks']],
+            ['label' => __('Avance del desglose'), 'value' => number_format($this->report['subtaskProgressRate'], 1).' %'],
+            ['label' => __('Listas para revisión'), 'value' => $this->report['readyForReview']],
+            ['label' => __('Vencidas'), 'value' => $this->report['overdueDeliverables']],
             ['label' => __('Ciclo promedio (h)'), 'value' => number_format($this->report['averageCycleHours'], 1)],
         ])
 
@@ -88,9 +92,9 @@
 
     <div class="grid gap-4 lg:grid-cols-2">
         @php($topCharts = [
-            'status' => __('Tareas por estado'),
+            'status' => __('Entregables por estado'),
             'priority' => __('Tickets por prioridad'),
-            'area' => __('Tareas por área'),
+            'area' => __('Entregables por área'),
             'category' => __('Tickets por categoría'),
         ])
 
@@ -109,7 +113,7 @@
     </div>
 
     <flux:card>
-        <flux:heading size="sm">{{ __('Tendencia semanal de tareas creadas') }}</flux:heading>
+        <flux:heading size="sm">{{ __('Tendencia semanal de entregables creados') }}</flux:heading>
         <div class="mt-3">
             <x-apex-chart
                 :chart-key="$this->charts['weekly']['key']"
@@ -146,10 +150,95 @@
             </div>
 
             <flux:text class="mt-4 text-xs text-zinc-400">
-                {{ __('Calculado a partir de las marcas de inicio, pruebas y terminado de cada tarea.') }}
+                {{ __('Calculado a partir de las marcas de inicio, pruebas y terminado de cada entregable.') }}
             </flux:text>
         </flux:card>
     </div>
+
+    <flux:card>
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <flux:heading size="sm">{{ __('Tareas recientes') }}</flux:heading>
+            <flux:text class="text-xs text-zinc-400">{{ __('Máximo 5 resultados · raíces y subtareas') }}</flux:text>
+        </div>
+
+        <flux:table bleed container:class="mt-4">
+            <flux:table.columns>
+                <flux:table.column>{{ __('Tipo') }}</flux:table.column>
+                <flux:table.column>{{ __('Título') }}</flux:table.column>
+                <flux:table.column>{{ __('Responsable') }}</flux:table.column>
+                <flux:table.column>{{ __('Estado') }}</flux:table.column>
+                <flux:table.column>{{ __('Terminado') }}</flux:table.column>
+            </flux:table.columns>
+
+            <flux:table.rows>
+                @forelse ($this->report['recentTasks'] as $task)
+                    <flux:table.row wire:key="dashboard-recent-task-{{ $task->id }}">
+                        <flux:table.cell>
+                            <flux:badge size="sm" :color="$task->parent_id === null ? 'indigo' : 'amber'">
+                                {{ $task->parent_id === null ? __('Tarea') : __('Subtarea') }}
+                            </flux:badge>
+                        </flux:table.cell>
+                        <flux:table.cell variant="strong">
+                            <span class="block max-w-xs truncate" title="{{ $task->title }}">{{ $task->title }}</span>
+                            @if ($task->parent !== null)
+                                <flux:text class="text-xs">{{ __('Subtarea de: :title', ['title' => $task->parent->title]) }}</flux:text>
+                            @endif
+                        </flux:table.cell>
+                        <flux:table.cell>{{ $task->assignee?->name ?? __('Sin responsable') }}</flux:table.cell>
+                        <flux:table.cell class="py-0">
+                            <flux:badge size="sm" :color="$task->status->badgeColor()">
+                                {{ $task->status->label() }}
+                            </flux:badge>
+                        </flux:table.cell>
+                        <flux:table.cell>{{ $task->completed_at?->format('d/m/Y H:i') ?? '—' }}</flux:table.cell>
+                    </flux:table.row>
+                @empty
+                    <flux:table.row>
+                        <flux:table.cell colspan="5">
+                            <flux:text class="text-sm">{{ __('No hay tareas en el periodo seleccionado.') }}</flux:text>
+                        </flux:table.cell>
+                    </flux:table.row>
+                @endforelse
+            </flux:table.rows>
+        </flux:table>
+    </flux:card>
+
+    <flux:card>
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <flux:heading size="sm">{{ __('Listas para revisión') }}</flux:heading>
+            <flux:text class="text-xs text-zinc-400">
+                {{ __('Subtareas terminadas; el jefe da la aprobación final.') }}
+            </flux:text>
+        </div>
+
+        <flux:table bleed container:class="mt-4">
+            <flux:table.columns>
+                <flux:table.column>{{ __('Entregable') }}</flux:table.column>
+                <flux:table.column>{{ __('Responsable') }}</flux:table.column>
+                <flux:table.column>{{ __('Subtareas') }}</flux:table.column>
+                <flux:table.column>{{ __('Área') }}</flux:table.column>
+            </flux:table.columns>
+
+            <flux:table.rows>
+                @forelse ($this->report['readyForReviewTasks'] as $task)
+                    <flux:table.row wire:key="dashboard-review-task-{{ $task->id }}">
+                        <flux:table.cell variant="strong">
+                            <span class="block max-w-sm truncate" title="{{ $task->title }}">{{ $task->title }}</span>
+                        </flux:table.cell>
+                        <flux:table.cell>{{ $task->assignee?->name ?? __('Sin responsable') }}</flux:table.cell>
+                        <flux:table.cell>{{ $task->subtasks_done_count }}/{{ $task->subtasks_total_count }}</flux:table.cell>
+                        <flux:table.cell>{{ $task->area?->name ?? '—' }}</flux:table.cell>
+                    </flux:table.row>
+                @empty
+                    <flux:table.row>
+                        <flux:table.cell colspan="4">
+                            <flux:text class="text-sm">{{ __('No hay entregables pendientes de revisión.') }}</flux:text>
+                        </flux:table.cell>
+                    </flux:table.row>
+                @endforelse
+            </flux:table.rows>
+        </flux:table>
+    </flux:card>
 
     <flux:card>
         <div class="flex flex-wrap items-center justify-between gap-3">

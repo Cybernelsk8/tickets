@@ -6,6 +6,7 @@ use App\TaskStatus;
 use App\TicketPriority;
 use Database\Factories\TaskFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -31,6 +32,9 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $testing_at
  * @property Carbon|null $completed_at
  * @property int|null $created_by
+ * @property int $children_count
+ * @property int $subtasks_total_count
+ * @property int $subtasks_done_count
  */
 #[Fillable([
     'ticket_id', 'parent_id', 'title', 'description', 'assignee_id', 'area_id',
@@ -60,6 +64,40 @@ class Task extends Model
             'testing_at' => 'datetime',
             'completed_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Restrict a query to root tasks, which are the reportable deliverables.
+     *
+     * @param  Builder<Task>  $query
+     */
+    public function scopeRoots(Builder $query): void
+    {
+        $query->whereNull('parent_id');
+    }
+
+    /**
+     * Restrict a query to subtasks, which only report operational progress.
+     *
+     * @param  Builder<Task>  $query
+     */
+    public function scopeSubtasks(Builder $query): void
+    {
+        $query->whereNotNull('parent_id');
+    }
+
+    /**
+     * Restrict a query to root tasks whose subtasks are all finished.
+     *
+     * @param  Builder<Task>  $query
+     */
+    public function scopeReadyForReview(Builder $query): void
+    {
+        $query->whereNull('parent_id')
+            ->whereNot('status', TaskStatus::Done->value)
+            ->whereHas('children')
+            ->whereDoesntHave('children', fn (Builder $childQuery): mixed => $childQuery
+                ->whereNot('status', TaskStatus::Done->value));
     }
 
     /** @return BelongsTo<Ticket, $this> */
