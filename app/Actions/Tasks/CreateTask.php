@@ -35,14 +35,37 @@ class CreateTask
      */
     public function handle(array $data): Task
     {
-        Gate::authorize('create', Task::class);
-
-        $area = Area::query()->findOrFail($data['area_id']);
-        $this->authorizeArea($area);
+        $user = auth()->user();
 
         $parent = $data['parent_id'] === null
             ? null
             : Task::query()->findOrFail($data['parent_id']);
+
+        $isSubtaskOnly = $parent !== null && Gate::denies('create', Task::class);
+
+        if ($isSubtaskOnly) {
+            Gate::authorize('createSubtask', $parent);
+
+            $parentAreaId = $parent->area_id;
+
+            if ($parentAreaId === null) {
+                throw ValidationException::withMessages([
+                    'parent_id' => __('La tarea padre debe pertenecer a un área.'),
+                ]);
+            }
+
+            $data['area_id'] = $parentAreaId;
+            $data['assignee_id'] = $user instanceof User ? $user->id : null;
+            $data['status'] = TaskStatus::Todo;
+        } else {
+            Gate::authorize('create', Task::class);
+        }
+
+        $area = Area::query()->findOrFail($data['area_id']);
+
+        if (! $isSubtaskOnly) {
+            $this->authorizeArea($area);
+        }
 
         if ($parent !== null && $parent->area_id !== $area->id) {
             throw ValidationException::withMessages([
@@ -82,7 +105,7 @@ class CreateTask
             ]);
         }
 
-        return DB::transaction(function () use ($data, $area, $assignee, $dependency): Task {
+        return DB::transaction(function () use ($data, $area, $assignee, $dependency, $isSubtaskOnly): Task {
             $nextPosition = (int) Task::query()
                 ->where('area_id', $area->id)
                 ->where('status', $data['status']->value)
@@ -118,7 +141,9 @@ class CreateTask
                 'to_status' => $data['status']->value,
                 'changed_by' => auth()->id(),
                 'occurred_at' => now(),
-                'note' => __('Tarea creada desde el tablero.'),
+                'note' => $isSubtaskOnly
+                    ? __('Subtarea creada desde el tablero.')
+                    : __('Tarea creada desde el tablero.'),
             ]);
 
             return $task;

@@ -2,12 +2,16 @@
 
 namespace App\Livewire\Boards;
 
-use App\Actions\Tasks\AssignTaskToUser;
+use App\Actions\Tasks\AddTaskComment;
 use App\Actions\Tasks\CreateTask;
 use App\Actions\Tasks\MoveTask;
+use App\Actions\Tasks\UpdateTask;
 use App\Models\Area;
+use App\Models\Comment;
 use App\Models\Task;
+use App\Models\TaskStatusTransition;
 use App\Models\User;
+use App\TaskBoardColumn;
 use App\TaskStatus;
 use App\TicketPriority;
 use Flux\Flux;
@@ -18,10 +22,18 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Computed;
+use Livewire\Attributes\Url;
 use Livewire\Component;
+use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
+use Livewire\WithFileUploads;
 
 class Index extends Component
 {
+    use WithFileUploads;
+
+    #[Url(except: '')]
+    public string $scope = '';
+
     public ?int $areaId = null;
 
     public string $title = '';
@@ -46,27 +58,93 @@ class Index extends Component
 
     public bool $showCreateModal = false;
 
-    public ?int $assignmentTaskId = null;
-
-    public ?int $assignmentAssigneeId = null;
-
-    public bool $showAssignmentModal = false;
-
     public ?int $detailsTaskId = null;
 
     public bool $showDetailsModal = false;
+
+    public string $commentBody = '';
+
+    public bool $commentIsInternal = false;
+
+    /** @var array<int, TemporaryUploadedFile> */
+    public array $commentFiles = [];
+
+    public ?int $editTaskId = null;
+
+    public ?int $editAreaId = null;
+
+    public string $editTitle = '';
+
+    public ?string $editDescription = null;
+
+    public string $editPriority = 'medium';
+
+    public ?string $editDueAt = null;
+
+    public ?int $editEstimatedMinutes = null;
+
+    public ?int $editAssigneeId = null;
+
+    public ?int $editParentTaskId = null;
+
+    public ?int $editDependsOnTaskId = null;
+
+    public bool $showEditModal = false;
 
     public function mount(): void
     {
         Gate::authorize('viewAny', Task::class);
 
+        $allowedScopes = array_column($this->scopeOptions(), 'id');
+
+        if (! in_array($this->scope, $allowedScopes, true)) {
+            $this->scope = $this->initialScope();
+        }
+
         $this->areaId = $this->initialAreaId();
+    }
+
+    /**
+     * @return array<int, array{id: string, label: string}>
+     */
+    public function scopeOptions(): array
+    {
+        $options = [
+            ['id' => 'mine', 'label' => __('Mis tareas')],
+            ['id' => 'area', 'label' => __('Mi área')],
+        ];
+
+        $user = auth()->user();
+
+        if ($user instanceof User && ($user->hasRole('super_admin') || $user->can('tickets.viewAny'))) {
+            $options[] = ['id' => 'all', 'label' => __('Todas las áreas')];
+        }
+
+        return $options;
+    }
+
+    /**
+     * Prefer the broadest scope the authenticated user is allowed to see.
+     */
+    private function initialScope(): string
+    {
+        $user = auth()->user();
+
+        if ($user instanceof User && ($user->hasRole('super_admin') || $user->can('tickets.viewAny'))) {
+            return 'all';
+        }
+
+        if ($user instanceof User && $user->managedAreas()->exists()) {
+            return 'area';
+        }
+
+        return 'mine';
     }
 
     /**
      * Prefer the user's area, then the area with tasks, so assigned tickets are visible.
      */
-    private function initialAreaId(): ?int
+    protected function initialAreaId(): ?int
     {
         $areas = $this->areas();
 
@@ -133,16 +211,43 @@ class Index extends Component
     #[Computed]
     public function tasks(): Collection
     {
-        if ($this->areaId === null) {
+        $user = auth()->user();
+
+        if (! $user instanceof User) {
             return collect();
         }
 
-        return Task::query()
-            ->with(['ticket', 'assignee', 'parent', 'dependencies.dependsOnTask'])
-            ->where('area_id', $this->areaId)
-            ->orderBy('position')
-            ->orderBy('id')
-            ->get();
+        $query = Task::query()->with([
+            'area',
+            'ticket',
+            'assignee',
+            'parent',
+            'dependencies.dependsOnTask',
+            'statusTransitions' => fn ($query) => $query
+                ->orderByDesc('occurred_at')
+                ->orderByDesc('id'),
+        ]);
+
+        if ($this->scope === 'mine') {
+            if ($this->areaId === null) {
+                return collect();
+            }
+
+            $query->where('assignee_id', $user->id)
+                ->whereIn('area_id', $this->areas()->pluck('id'));
+        } elseif ($this->scope === 'area') {
+            if ($this->areaId === null) {
+                return collect();
+            }
+
+            $query->where('area_id', $this->areaId);
+        } elseif ($this->scope === 'all') {
+            $query->whereIn('area_id', $this->areas()->pluck('id'));
+        } else {
+            return collect();
+        }
+
+        return $query->orderBy('position')->orderBy('id')->get();
     }
 
     /**
@@ -151,17 +256,21 @@ class Index extends Component
     #[Computed]
     public function columns(): array
     {
-        return collect([
-            ['id' => 'todo', 'label' => TaskStatus::Todo->label(), 'status' => TaskStatus::Todo],
-            ['id' => 'assigned', 'label' => TaskStatus::Assigned->label(), 'status' => TaskStatus::Assigned],
-            ['id' => 'in_progress', 'label' => TaskStatus::InProgress->label(), 'status' => TaskStatus::InProgress],
-            ['id' => 'done', 'label' => TaskStatus::Done->label(), 'status' => TaskStatus::Done],
-        ])->map(function (array $column): array {
-            $column['tasks'] = $this->tasks()
-                ->filter(fn (Task $task): bool => $task->status->kanbanColumn() === $column['id'])
-                ->values();
+        return collect(TaskBoardColumn::cases())->map(function (TaskBoardColumn $column): array {
+            $status = match ($column) {
+                TaskBoardColumn::Todo => TaskStatus::Todo,
+                TaskBoardColumn::InProgress => TaskStatus::InProgress,
+                TaskBoardColumn::Done => TaskStatus::Done,
+            };
 
-            return $column;
+            return [
+                'id' => $column->value,
+                'label' => $column->label(),
+                'status' => $status,
+                'tasks' => $this->tasks()
+                    ->filter(fn (Task $task): bool => $task->status->kanbanColumn() === $column)
+                    ->values(),
+            ];
         })->all();
     }
 
@@ -183,19 +292,71 @@ class Index extends Component
     }
 
     /**
+     * @return Collection<int, User>
+     */
+    #[Computed]
+    public function editAssignees(): Collection
+    {
+        if ($this->editAreaId === null) {
+            return collect();
+        }
+
+        return User::query()
+            ->where('is_active', true)
+            ->where('area_id', $this->editAreaId)
+            ->orderBy('name')
+            ->get();
+    }
+
+    /**
      * @return Collection<int, Task>
      */
     #[Computed]
     public function availableTasks(): Collection
     {
-        if ($this->areaId === null) {
+        $user = auth()->user();
+
+        if (! $user instanceof User || $this->areaId === null) {
             return collect();
         }
 
-        return Task::query()
-            ->where('area_id', $this->areaId)
-            ->orderBy('title')
-            ->get();
+        $query = Task::query();
+
+        if ($this->scope === 'mine') {
+            $query->where('area_id', $this->areaId)
+                ->where('assignee_id', $user->id);
+        } elseif ($this->scope === 'area') {
+            $query->where('area_id', $this->areaId);
+        } elseif ($this->scope === 'all') {
+            $query->whereIn('area_id', $this->areas()->pluck('id'));
+        } else {
+            return collect();
+        }
+
+        return $query->orderBy('title')->get();
+    }
+
+    /**
+     * @return Collection<int, Task>
+     */
+    #[Computed]
+    public function editAvailableTasks(): Collection
+    {
+        if ($this->editAreaId === null) {
+            return collect();
+        }
+
+        $query = Task::query()->where('area_id', $this->editAreaId);
+        $user = auth()->user();
+
+        if ($user instanceof User
+            && ! $user->hasRole('super_admin')
+            && ! $user->can('tickets.viewAny')
+            && ! $user->managedAreas()->whereKey($this->editAreaId)->exists()) {
+            $query->where('assignee_id', $user->id);
+        }
+
+        return $query->orderBy('title')->get();
     }
 
     /**
@@ -215,14 +376,30 @@ class Index extends Component
 
         return Task::query()
             ->with([
+                'area',
                 'ticket',
                 'assignee',
                 'parent',
                 'children',
                 'dependencies.dependsOnTask',
+                'statusTransitions' => fn ($query) => $query
+                    ->orderByDesc('occurred_at')
+                    ->orderByDesc('id'),
                 'statusTransitions.changedBy',
+                'attachments',
+                'comments.user',
+                'comments.attachments',
             ])
             ->find($this->detailsTaskId);
+    }
+
+    /**
+     * Latest transition that crossed a Kanban column boundary.
+     */
+    public function latestColumnMovement(Task $task): ?TaskStatusTransition
+    {
+        return $task->statusTransitions
+            ->first(fn (TaskStatusTransition $transition): bool => $transition->changedColumn());
     }
 
     public function updatedAreaId(): void
@@ -230,22 +407,69 @@ class Index extends Component
         $this->closeModals();
     }
 
+    public function updatedScope(): void
+    {
+        $this->closeModals();
+    }
+
+    public function canChooseAssignee(): bool
+    {
+        return Gate::allows('create', Task::class);
+    }
+
+    public function canReassign(Task $task): bool
+    {
+        return Gate::allows('reassign', $task);
+    }
+
+    public function canReassignEditedTask(): bool
+    {
+        if ($this->editTaskId === null) {
+            return false;
+        }
+
+        $task = Task::find($this->editTaskId);
+
+        return $task instanceof Task && $this->canReassign($task);
+    }
+
+    public function canCommentOn(Task $task): bool
+    {
+        return Gate::allows('view', $task) && Gate::allows('create', Comment::class);
+    }
+
     public function openCreate(string $column): void
     {
         Gate::authorize('create', Task::class);
 
         $this->resetCreateForm();
-        $this->targetStatus = in_array($column, ['todo', 'assigned', 'in_progress', 'done'], true)
-            ? $column
-            : 'todo';
+        $targetColumn = collect($this->columns())->firstWhere('id', $column);
+        $this->targetStatus = is_array($targetColumn)
+            ? $targetColumn['status']->value
+            : TaskStatus::Todo->value;
+        $this->showDetailsModal = false;
+        $this->showCreateModal = true;
+    }
+
+    public function openSubtask(int $taskId): void
+    {
+        $parent = Task::findOrFail($taskId);
+        Gate::authorize('createSubtask', $parent);
+
+        $this->resetCreateForm();
+        $this->parentTaskId = $parent->id;
+        $this->areaId = $parent->area_id ?? $this->areaId;
+        $this->targetStatus = TaskStatus::Todo->value;
+        $user = auth()->user();
+        $this->assigneeId = Gate::allows('create', Task::class)
+            ? $parent->assignee_id
+            : ($user instanceof User ? $user->id : null);
         $this->showDetailsModal = false;
         $this->showCreateModal = true;
     }
 
     public function createTask(CreateTask $action): void
     {
-        Gate::authorize('create', Task::class);
-
         $validated = $this->validate([
             'title' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
@@ -259,9 +483,15 @@ class Index extends Component
             'actualMinutes' => ['nullable', 'integer', 'min:0', 'max:100000'],
             'dueAt' => ['nullable', 'date'],
             'dependsOnTaskId' => ['nullable', 'integer', 'exists:tasks,id'],
-            'targetStatus' => ['required', Rule::in(['todo', 'assigned', 'in_progress', 'done'])],
+            'targetStatus' => ['required', Rule::in(['todo', 'in_progress', 'done'])],
             'areaId' => ['required', 'integer', 'exists:areas,id'],
         ]);
+
+        if ($validated['parentTaskId'] !== null) {
+            Gate::authorize('createSubtask', Task::findOrFail($validated['parentTaskId']));
+        } else {
+            Gate::authorize('create', Task::class);
+        }
 
         try {
             $action->handle([
@@ -292,57 +522,122 @@ class Index extends Component
         $task = Task::findOrFail($taskId);
         Gate::authorize('view', $task);
 
+        $this->resetCommentForm();
         $this->detailsTaskId = $task->id;
         $this->showDetailsModal = true;
     }
 
-    public function openAssign(int $taskId): void
+    /**
+     * Add a comment with optional private files and refresh the detail modal.
+     */
+    public function addComment(AddTaskComment $action): void
     {
-        $task = Task::findOrFail($taskId);
-        Gate::authorize('update', $task);
-
-        $this->assignmentTaskId = $task->id;
-        $this->assignmentAssigneeId = $task->assignee_id;
-        $this->showDetailsModal = false;
-        $this->showAssignmentModal = true;
-    }
-
-    public function assignTask(AssignTaskToUser $action): void
-    {
-        if ($this->assignmentTaskId === null) {
+        if ($this->detailsTaskId === null) {
             return;
         }
 
-        $task = Task::findOrFail($this->assignmentTaskId);
-        Gate::authorize('update', $task);
+        $task = Task::findOrFail($this->detailsTaskId);
 
         $validated = $this->validate([
-            'assignmentAssigneeId' => ['nullable', 'integer', 'exists:users,id'],
+            'commentBody' => ['nullable', 'string', 'max:10000'],
+            'commentIsInternal' => ['boolean'],
+            'commentFiles' => ['nullable', 'array', 'max:5'],
+            'commentFiles.*' => [
+                'file',
+                'max:'.(int) config('tickets.attachments.max_kb', 10240),
+                'mimetypes:'.implode(',', array_keys((array) config('tickets.attachments.allowed_mimes', []))),
+            ],
         ]);
 
         try {
-            $action->handle($task, $validated['assignmentAssigneeId']);
+            $action->handle(
+                $task,
+                $validated['commentBody'] ?? '',
+                (bool) ($validated['commentIsInternal'] ?? false),
+                $validated['commentFiles'] ?? [],
+            );
         } catch (ValidationException $exception) {
             $this->reportValidationError($exception);
 
             return;
         }
 
+        unset($this->detailsTask);
+        $this->resetCommentForm();
+        Flux::toast(text: __('Comentario registrado.'), variant: 'success');
+    }
+
+    public function openEdit(int $taskId): void
+    {
+        $task = Task::findOrFail($taskId);
+        Gate::authorize('update', $task);
+
+        $this->editTaskId = $task->id;
+        $this->editAreaId = $task->area_id;
+        $this->editTitle = $task->title;
+        $this->editDescription = $task->description;
+        $this->editPriority = $task->priority->value;
+        $this->editDueAt = $task->due_at?->format('Y-m-d');
+        $this->editEstimatedMinutes = $task->estimated_minutes;
+        $this->editAssigneeId = $task->assignee_id;
+        $this->editParentTaskId = $task->parent_id;
+        $this->editDependsOnTaskId = $task->dependencies
+            ->firstWhere('type', 'finish_to_start')?->depends_on_task_id;
+        $this->showDetailsModal = false;
+        $this->showCreateModal = false;
+        $this->showEditModal = true;
+    }
+
+    public function updateTask(UpdateTask $action): void
+    {
+        if ($this->editTaskId === null) {
+            return;
+        }
+
+        $task = Task::findOrFail($this->editTaskId);
+
+        $validated = $this->validate([
+            'editTitle' => ['required', 'string', 'max:255'],
+            'editDescription' => ['nullable', 'string'],
+            'editPriority' => ['required', Rule::in(array_map(
+                fn (TicketPriority $case): string => $case->value,
+                TicketPriority::cases(),
+            ))],
+            'editDueAt' => ['nullable', 'date'],
+            'editEstimatedMinutes' => ['nullable', 'integer', 'min:0', 'max:100000'],
+            'editAssigneeId' => ['nullable', 'integer', 'exists:users,id'],
+            'editParentTaskId' => ['nullable', 'integer', 'exists:tasks,id'],
+            'editDependsOnTaskId' => ['nullable', 'integer', 'exists:tasks,id'],
+        ]);
+
+        try {
+            $action->handle($task, [
+                'title' => $validated['editTitle'],
+                'description' => $validated['editDescription'] ?: null,
+                'priority' => $validated['editPriority'],
+                'due_at' => $validated['editDueAt'],
+                'estimated_minutes' => $validated['editEstimatedMinutes'],
+                'assignee_id' => $validated['editAssigneeId'],
+                'parent_id' => $validated['editParentTaskId'],
+                'depends_on_task_id' => $validated['editDependsOnTaskId'],
+            ]);
+        } catch (ValidationException $exception) {
+            $this->reportValidationError($exception);
+
+            return;
+        }
+
+        unset($this->detailsTask, $this->tasks, $this->editAvailableTasks, $this->editAssignees);
         $this->closeModals();
-        Flux::toast(text: __('Responsable actualizado.'), variant: 'success');
+        Flux::toast(text: __('Tarea actualizada.'), variant: 'success');
     }
 
     public function handleSort(int $taskId, int $position, string $column): void
     {
-        $status = match ($column) {
-            'todo' => TaskStatus::Todo,
-            'assigned' => TaskStatus::Assigned,
-            'in_progress' => TaskStatus::InProgress,
-            'done' => TaskStatus::Done,
-            default => null,
-        };
+        $targetColumn = collect($this->columns())->firstWhere('id', $column);
+        $status = is_array($targetColumn) ? $targetColumn['status'] : null;
 
-        if ($status === null) {
+        if (! $status instanceof TaskStatus) {
             return;
         }
 
@@ -368,12 +663,20 @@ class Index extends Component
     private function closeModals(): void
     {
         Flux::modal('create-task')->close();
-        Flux::modal('assign-task')->close();
+        Flux::modal('edit-task')->close();
 
         $this->showCreateModal = false;
-        $this->showAssignmentModal = false;
+        $this->showEditModal = false;
         $this->detailsTaskId = null;
         $this->showDetailsModal = false;
+        $this->resetCommentForm();
+    }
+
+    private function resetCommentForm(): void
+    {
+        $this->commentBody = '';
+        $this->commentIsInternal = false;
+        $this->commentFiles = [];
     }
 
     private function resetCreateForm(): void

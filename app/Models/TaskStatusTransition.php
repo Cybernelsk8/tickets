@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\TaskStatus;
 use Database\Factories\TaskStatusTransitionFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -46,5 +47,33 @@ class TaskStatusTransition extends Model
     public function changedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'changed_by');
+    }
+
+    /**
+     * Human readable Kanban column the task came from.
+     */
+    public function fromColumnLabel(): ?string
+    {
+        if ($this->from_status === null) {
+            return null;
+        }
+
+        return TaskStatus::from($this->from_status)->kanbanColumnLabel();
+    }
+
+    /**
+     * Human readable Kanban column the task moved to.
+     */
+    public function toColumnLabel(): string
+    {
+        return TaskStatus::from($this->to_status)->kanbanColumnLabel();
+    }
+
+    /**
+     * Determine whether this transition crossed a Kanban column boundary.
+     */
+    public function changedColumn(): bool
+    {
+        return $this->fromColumnLabel() !== $this->toColumnLabel();
     }
 }

@@ -14,8 +14,10 @@ it('shows ticket navigation to users with permissions', function () {
         ->assertSee('Bandeja')
         ->assertSee('Cuentas de correo')
         ->assertSee('Tickets')
-        ->assertSee('Tableros')
-        ->assertSee('Mis tareas');
+        ->assertSee('Tareas')
+        ->assertDontSee('Mis tareas')
+        ->assertSee('Usuarios')
+        ->assertSee('Roles y permisos');
 });
 
 it('hides ticket navigation from unprivileged users', function () {
@@ -26,7 +28,18 @@ it('hides ticket navigation from unprivileged users', function () {
         ->assertOk()
         ->assertDontSee('Bandeja')
         ->assertDontSee('Cuentas de correo')
-        ->assertDontSee('Tableros');
+        ->assertDontSee('Tableros')
+        ->assertDontSee('Mis tareas');
+});
+
+it('redirects the legacy my tasks route to the unified board', function () {
+    $this->seed(RolesAndPermissionsSeeder::class);
+
+    $admin = User::factory()->superAdmin()->create();
+
+    $this->actingAs($admin)
+        ->get(route('tasks.mine'))
+        ->assertRedirect(route('boards.index', ['scope' => 'mine']));
 });
 
 it('renders each application page', function (string $routeName) {
@@ -41,5 +54,6 @@ it('renders each application page', function (string $routeName) {
     'mail.accounts.index',
     'tickets.index',
     'boards.index',
-    'tasks.mine',
+    'admin.users.index',
+    'admin.roles.index',
 ]);

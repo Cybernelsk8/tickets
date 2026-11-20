@@ -43,11 +43,31 @@ class TaskPolicy
     }
 
     /**
+     * Determine whether the user can split a task they own into subtasks.
+     */
+    public function createSubtask(User $user, Task $parent): bool
+    {
+        return $user->can('tasks.update')
+            && $parent->area_id !== null
+            && ($user->area_id === $parent->area_id || $this->managesTaskArea($user, $parent))
+            && $this->canManageTask($user, $parent);
+    }
+
+    /**
      * Determine whether the user can update the model.
      */
     public function update(User $user, Task $task): bool
     {
         return $user->can('tasks.update') && $this->canManageTask($user, $task);
+    }
+
+    /**
+     * Determine whether the user can change the task's responsible user.
+     */
+    public function reassign(User $user, Task $task): bool
+    {
+        return $user->can('tickets.viewAny')
+            || ($task->area_id !== null && $user->managedAreas()->whereKey($task->area_id)->exists());
     }
 
     /**

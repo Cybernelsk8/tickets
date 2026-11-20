@@ -6,6 +6,7 @@ use App\Models\Area;
 use App\Models\Ticket;
 use App\Models\TicketCategory;
 use App\Models\User;
+use App\TaskStatus;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Support\Facades\Mail;
 use Livewire\Livewire;
@@ -71,6 +72,32 @@ it('rejects an assignee from another area in the interface', function () {
 
     $this->assertDatabaseHas('tickets', ['id' => $ticket->id, 'status' => 'todo']);
     Mail::assertNothingQueued();
+});
+
+it('hides assignment controls for finished tickets', function () {
+    $manager = User::factory()->mailManager()->create();
+    $ticket = Ticket::factory()->create([
+        'subject' => 'Ticket terminado',
+        'status' => TaskStatus::Done,
+    ]);
+
+    Livewire::actingAs($manager)
+        ->test(Index::class)
+        ->assertSee('Ticket terminado')
+        ->assertDontSee('Asignar')
+        ->call('openAssign', $ticket->id)
+        ->assertForbidden();
+});
+
+it('still lets a super administrator open assignment for a finished ticket', function () {
+    $admin = User::factory()->superAdmin()->create();
+    $ticket = Ticket::factory()->create(['status' => TaskStatus::Done]);
+
+    Livewire::actingAs($admin)
+        ->test(Index::class)
+        ->assertSee('Asignar')
+        ->call('openAssign', $ticket->id)
+        ->assertSet('assigningTicketId', $ticket->id);
 });
 
 it('does not show the ticket list to unprivileged users', function () {

@@ -33,15 +33,32 @@
                     @endcanany
 
                     @can('tasks.viewAny')
-                        <flux:sidebar.item icon="rectangle-stack" :href="route('boards.index')" :current="request()->routeIs('boards.index')" wire:navigate>
-                            {{ __('Tableros') }}
-                        </flux:sidebar.item>
-
-                        <flux:sidebar.item icon="clipboard-document-list" :href="route('tasks.mine')" :current="request()->routeIs('tasks.mine')" wire:navigate>
-                            {{ __('Mis tareas') }}
+                        <flux:sidebar.item
+                            icon="rectangle-stack"
+                            :href="route('boards.index')"
+                            :current="request()->routeIs('boards.index', 'tasks.mine')"
+                            wire:navigate
+                        >
+                            {{ __('Tareas') }}
                         </flux:sidebar.item>
                     @endcan
                 </flux:sidebar.group>
+
+                @canany(['users.viewAny', 'roles.viewAny'])
+                    <flux:sidebar.group :heading="__('Administración')" class="grid">
+                        @can('users.viewAny', App\Models\User::class)
+                            <flux:sidebar.item icon="users" :href="route('admin.users.index')" :current="request()->routeIs('admin.users.index')" wire:navigate>
+                                {{ __('Usuarios') }}
+                            </flux:sidebar.item>
+                        @endcan
+
+                        @can('roles.viewAny', Spatie\Permission\Models\Role::class)
+                            <flux:sidebar.item icon="shield-check" :href="route('admin.roles.index')" :current="request()->routeIs('admin.roles.index')" wire:navigate>
+                                {{ __('Roles y permisos') }}
+                            </flux:sidebar.item>
+                        @endcan
+                    </flux:sidebar.group>
+                @endcanany
             </flux:sidebar.nav>
 
             <flux:spacer />

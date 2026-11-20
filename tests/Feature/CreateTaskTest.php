@@ -91,6 +91,65 @@ it('does not let collaborators create tasks from the board', function () {
     ]))->toThrow(AuthorizationException::class);
 });
 
+it('lets a collaborator create a subtask assigned to themselves', function () {
+    $this->seed(RolesAndPermissionsSeeder::class);
+
+    $collaborator = User::factory()->colaborador()->create();
+    $area = Area::factory()->create(['manager_id' => null]);
+    $collaborator->update(['area_id' => $area->id]);
+    $otherCollaborator = User::factory()->colaborador()->create(['area_id' => $area->id]);
+    $parent = Task::factory()->create(['area_id' => $area->id, 'assignee_id' => $collaborator->id]);
+
+    $this->actingAs($collaborator);
+
+    $subtask = app(CreateTask::class)->handle([
+        'title' => 'Desglose del colaborador',
+        'description' => null,
+        'area_id' => $area->id,
+        'parent_id' => $parent->id,
+        'assignee_id' => $otherCollaborator->id,
+        'status' => TaskStatus::Done,
+        'priority' => TicketPriority::Medium,
+        'estimated_minutes' => null,
+        'actual_minutes' => null,
+        'due_at' => null,
+        'depends_on_task_id' => null,
+    ]);
+
+    expect($subtask->parent_id)->toBe($parent->id)
+        ->and($subtask->area_id)->toBe($area->id)
+        ->and($subtask->assignee_id)->toBe($collaborator->id)
+        ->and($subtask->status)->toBe(TaskStatus::Todo)
+        ->and($subtask->created_by)->toBe($collaborator->id)
+        ->and($subtask->statusTransitions()->first()->to_status)->toBe(TaskStatus::Todo->value);
+});
+
+it('does not let a collaborator create a subtask in another area', function () {
+    $this->seed(RolesAndPermissionsSeeder::class);
+
+    $collaborator = User::factory()->colaborador()->create();
+    $ownArea = Area::factory()->create(['manager_id' => null]);
+    $otherArea = Area::factory()->create(['manager_id' => null]);
+    $collaborator->update(['area_id' => $ownArea->id]);
+    $parent = Task::factory()->create(['area_id' => $otherArea->id, 'assignee_id' => $collaborator->id]);
+
+    $this->actingAs($collaborator);
+
+    expect(fn () => app(CreateTask::class)->handle([
+        'title' => 'Subtarea en área ajena',
+        'description' => null,
+        'area_id' => $otherArea->id,
+        'parent_id' => $parent->id,
+        'assignee_id' => $collaborator->id,
+        'status' => TaskStatus::Todo,
+        'priority' => TicketPriority::Medium,
+        'estimated_minutes' => null,
+        'actual_minutes' => null,
+        'due_at' => null,
+        'depends_on_task_id' => null,
+    ]))->toThrow(AuthorizationException::class);
+});
+
 it('requires the dependency to be done before creating a task already in progress', function () {
     $this->seed(RolesAndPermissionsSeeder::class);
 

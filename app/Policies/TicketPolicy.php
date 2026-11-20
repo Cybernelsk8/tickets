@@ -48,6 +48,10 @@ class TicketPolicy
      */
     public function assign(User $user, Ticket $ticket): bool
     {
+        if ($ticket->status->isFinal()) {
+            return false;
+        }
+
         return $user->can('tickets.assign') && $this->canManageArea($user, $ticket->area_id);
     }
 

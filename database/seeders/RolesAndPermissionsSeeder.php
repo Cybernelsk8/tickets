@@ -50,6 +50,14 @@ class RolesAndPermissionsSeeder extends Seeder
             'attachments.delete',
             'reports.view',
             'reports.viewOwnArea',
+            'users.viewAny',
+            'users.create',
+            'users.update',
+            'users.delete',
+            'roles.viewAny',
+            'roles.create',
+            'roles.update',
+            'roles.delete',
         ];
 
         foreach ($permissions as $permission) {

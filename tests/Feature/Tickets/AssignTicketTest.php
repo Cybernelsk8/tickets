@@ -3,6 +3,7 @@
 use App\Actions\Tickets\AssignTicket;
 use App\Mail\TicketAssignedMail;
 use App\Models\Area;
+use App\Models\Task;
 use App\Models\Ticket;
 use App\Models\TicketCategory;
 use App\Models\User;
@@ -164,4 +165,92 @@ it('rejects an assignee outside the selected area without side effects', functio
 
     $this->assertDatabaseHas('tickets', ['id' => $ticket->id, 'status' => 'todo', 'assigned_at' => null]);
     Mail::assertNothingQueued();
+});
+
+it('refuses to reassign a finished ticket without side effects', function () {
+    $manager = User::factory()->mailManager()->create();
+    $area = Area::factory()->create();
+    $category = TicketCategory::factory()->create();
+    $originalAssignee = User::factory()->colaborador()->create(['area_id' => $area->id]);
+    $replacement = User::factory()->colaborador()->create(['area_id' => $area->id]);
+    $ticket = Ticket::factory()->create([
+        'area_id' => $area->id,
+        'category_id' => $category->id,
+        'status' => TaskStatus::Done,
+        'assignee_id' => $originalAssignee->id,
+        'assigned_at' => now()->subDay(),
+        'closed_at' => now(),
+    ]);
+    $rootTask = Task::factory()->create([
+        'ticket_id' => $ticket->id,
+        'area_id' => $area->id,
+        'assignee_id' => $originalAssignee->id,
+        'parent_id' => null,
+    ]);
+
+    Mail::fake();
+    $this->actingAs($manager);
+
+    try {
+        app(AssignTicket::class)->handle($ticket, [
+            'area_id' => $area->id,
+            'category_id' => $category->id,
+            'priority' => TicketPriority::Medium,
+            'assignee_id' => $replacement->id,
+        ]);
+        $this->fail('Expected a validation exception.');
+    } catch (ValidationException $exception) {
+        expect($exception->errors())->toHaveKey('ticket');
+    }
+
+    $this->assertDatabaseHas('tickets', [
+        'id' => $ticket->id,
+        'area_id' => $area->id,
+        'assignee_id' => $originalAssignee->id,
+        'status' => 'done',
+    ]);
+    $this->assertDatabaseHas('tasks', ['id' => $rootTask->id, 'assignee_id' => $originalAssignee->id]);
+    Mail::assertNothingQueued();
+});
+
+it('lets a super administrator force reassignment of a finished ticket', function () {
+    $admin = User::factory()->superAdmin()->create();
+    $area = Area::factory()->create();
+    $category = TicketCategory::factory()->create();
+    $originalAssignee = User::factory()->colaborador()->create(['area_id' => $area->id]);
+    $replacement = User::factory()->colaborador()->create(['area_id' => $area->id]);
+    $ticket = Ticket::factory()->create([
+        'area_id' => $area->id,
+        'status' => TaskStatus::Done,
+        'assignee_id' => $originalAssignee->id,
+        'assigned_at' => now()->subDay(),
+        'closed_at' => now(),
+    ]);
+    $rootTask = Task::factory()->create([
+        'ticket_id' => $ticket->id,
+        'area_id' => $area->id,
+        'assignee_id' => $originalAssignee->id,
+        'parent_id' => null,
+    ]);
+
+    Mail::fake();
+    $this->actingAs($admin);
+
+    $assigned = app(AssignTicket::class)->handle($ticket, [
+        'area_id' => $area->id,
+        'category_id' => $category->id,
+        'priority' => TicketPriority::High,
+        'assignee_id' => $replacement->id,
+    ]);
+
+    expect($assigned->status)->toBe(TaskStatus::Assigned)
+        ->and($assigned->assignee_id)->toBe($replacement->id);
+
+    $this->assertDatabaseHas('tickets', [
+        'id' => $ticket->id,
+        'assignee_id' => $replacement->id,
+        'status' => 'assigned',
+    ]);
+    $this->assertDatabaseHas('tasks', ['id' => $rootTask->id, 'assignee_id' => $replacement->id]);
+    Mail::assertQueued(TicketAssignedMail::class, 1);
 });

@@ -2,11 +2,14 @@
 
 namespace App\Actions\Tasks;
 
+use App\Mail\TaskStatusChangedMail;
 use App\Models\Task;
 use App\Models\TaskStatusTransition;
+use App\Models\User;
 use App\TaskStatus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\ValidationException;
 
 class MoveTask
@@ -20,7 +23,9 @@ class MoveTask
 
         $previousStatus = $task->status;
 
-        if (! $previousStatus->canTransitionTo($status)) {
+        $statusChanged = $previousStatus !== $status;
+
+        if ($statusChanged && ! $previousStatus->canTransitionTo($status)) {
             throw ValidationException::withMessages([
                 'board' => __('No se puede mover la tarea de :from a :to.', [
                     'from' => $previousStatus->label(),
@@ -29,14 +34,25 @@ class MoveTask
             ]);
         }
 
-        if (in_array($status, [TaskStatus::InProgress, TaskStatus::Testing, TaskStatus::Done], true)
+        if ($statusChanged
+            && in_array($status, [TaskStatus::InProgress, TaskStatus::Testing, TaskStatus::Done], true)
             && $this->hasUnfinishedDependencies($task)) {
             throw ValidationException::withMessages([
                 'board' => __('La tarea tiene dependencias que aún no están terminadas.'),
             ]);
         }
 
-        DB::transaction(function () use ($task, $status, $position, $previousStatus): void {
+        if ($statusChanged
+            && $status === TaskStatus::Done
+            && config('tickets.require_evidence_before_done')
+            && ! $task->comments()->exists()
+            && ! $task->attachments()->exists()) {
+            throw ValidationException::withMessages([
+                'board' => __('La tarea necesita al menos un comentario o adjunto antes de terminarse.'),
+            ]);
+        }
+
+        DB::transaction(function () use ($task, $status, $position, $previousStatus, $statusChanged): void {
             $task->update($this->statusAttributes($task, $status));
 
             $columnTasks = Task::query()
@@ -58,7 +74,7 @@ class MoveTask
                 $orderedTask->update(['position' => $orderedIndex]);
             }
 
-            if ($previousStatus !== $status) {
+            if ($statusChanged) {
                 TaskStatusTransition::create([
                     'task_id' => $task->id,
                     'from_status' => $previousStatus->value,
@@ -70,7 +86,28 @@ class MoveTask
             }
         });
 
-        return $task->fresh();
+        $task->refresh();
+
+        if ($statusChanged
+            && in_array($status, [TaskStatus::InProgress, TaskStatus::Testing, TaskStatus::Done], true)) {
+            $this->notifySupervisor($task, $previousStatus, $status);
+        }
+
+        return $task;
+    }
+
+    /**
+     * Notify the area manager when a task reaches a relevant stage.
+     */
+    private function notifySupervisor(Task $task, TaskStatus $previousStatus, TaskStatus $status): void
+    {
+        $manager = $task->area?->manager;
+
+        if (! $manager instanceof User || $manager->id === auth()->id()) {
+            return;
+        }
+
+        Mail::to($manager->email)->queue(new TaskStatusChangedMail($task, $manager, $previousStatus, $status));
     }
 
     /**

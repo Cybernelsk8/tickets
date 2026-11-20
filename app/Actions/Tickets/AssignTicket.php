@@ -23,6 +23,14 @@ class AssignTicket
      */
     public function handle(Ticket $ticket, array $data): Ticket
     {
+        $user = auth()->user();
+
+        if ($ticket->status->isFinal() && (! $user instanceof User || ! $user->hasRole('super_admin'))) {
+            throw ValidationException::withMessages([
+                'ticket' => __('No se puede reasignar un ticket terminado.'),
+            ]);
+        }
+
         Gate::authorize('assign', $ticket);
 
         $area = Area::query()->findOrFail($data['area_id']);

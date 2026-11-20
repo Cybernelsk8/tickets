@@ -14,7 +14,7 @@ class AssignTaskToUser
      */
     public function handle(Task $task, ?int $assigneeId): Task
     {
-        Gate::authorize('update', $task);
+        Gate::authorize('reassign', $task);
 
         $assignee = $assigneeId === null
             ? null

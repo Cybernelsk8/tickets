@@ -29,14 +29,21 @@ enum TaskStatus: string
     /**
      * Columna del tablero Kanban donde se muestra este estado.
      */
-    public function kanbanColumn(): string
+    public function kanbanColumn(): TaskBoardColumn
     {
         return match ($this) {
-            self::Todo => 'todo',
-            self::Assigned => 'assigned',
-            self::InProgress, self::Testing, self::Blocked => 'in_progress',
-            self::Done => 'done',
+            self::Todo, self::Assigned => TaskBoardColumn::Todo,
+            self::InProgress, self::Testing, self::Blocked => TaskBoardColumn::InProgress,
+            self::Done => TaskBoardColumn::Done,
         };
+    }
+
+    /**
+     * Etiqueta legible de la columna Kanban donde se muestra este estado.
+     */
+    public function kanbanColumnLabel(): string
+    {
+        return $this->kanbanColumn()->label();
     }
 
     public function isFinal(): bool
