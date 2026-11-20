@@ -39,7 +39,9 @@ class TaskPolicy
     public function create(User $user): bool
     {
         return $user->can('tasks.create')
-            && ($user->can('tickets.viewAny') || $user->managedAreas()->exists());
+            && ($user->can('tickets.viewAny')
+                || $user->managedAreas()->exists()
+                || $user->area_id !== null);
     }
 
     /**

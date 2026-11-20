@@ -8,7 +8,6 @@ use App\Models\User;
 use App\TaskStatus;
 use App\TicketPriority;
 use Database\Seeders\RolesAndPermissionsSeeder;
-use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Carbon;
 use Illuminate\Validation\ValidationException;
 
@@ -68,27 +67,59 @@ it('rejects creating a task in an area the manager does not manage', function ()
     ]))->toThrow(ValidationException::class);
 });
 
-it('does not let collaborators create tasks from the board', function () {
+it('lets a collaborator create a task assigned to themselves in their own area', function () {
     $this->seed(RolesAndPermissionsSeeder::class);
 
     $collaborator = User::factory()->colaborador()->create();
-    $area = Area::factory()->create();
+    $area = Area::factory()->create(['manager_id' => null]);
+    $collaborator->update(['area_id' => $area->id]);
+    $otherCollaborator = User::factory()->colaborador()->create(['area_id' => $area->id]);
 
     $this->actingAs($collaborator);
 
-    expect(fn () => app(CreateTask::class)->handle([
+    $task = app(CreateTask::class)->handle([
         'title' => 'Tarea del colaborador',
         'description' => null,
         'area_id' => $area->id,
         'parent_id' => null,
-        'assignee_id' => null,
+        'assignee_id' => $otherCollaborator->id,
+        'status' => TaskStatus::Done,
+        'priority' => TicketPriority::Medium,
+        'estimated_minutes' => null,
+        'actual_minutes' => null,
+        'due_at' => null,
+        'depends_on_task_id' => null,
+    ]);
+
+    expect($task->assignee_id)->toBe($collaborator->id)
+        ->and($task->area_id)->toBe($area->id)
+        ->and($task->status)->toBe(TaskStatus::Todo)
+        ->and($task->created_by)->toBe($collaborator->id);
+});
+
+it('does not let a collaborator create a task in another area', function () {
+    $this->seed(RolesAndPermissionsSeeder::class);
+
+    $collaborator = User::factory()->colaborador()->create();
+    $ownArea = Area::factory()->create(['manager_id' => null]);
+    $otherArea = Area::factory()->create(['manager_id' => null]);
+    $collaborator->update(['area_id' => $ownArea->id]);
+
+    $this->actingAs($collaborator);
+
+    expect(fn () => app(CreateTask::class)->handle([
+        'title' => 'Tarea en área ajena',
+        'description' => null,
+        'area_id' => $otherArea->id,
+        'parent_id' => null,
+        'assignee_id' => $collaborator->id,
         'status' => TaskStatus::Todo,
         'priority' => TicketPriority::Medium,
         'estimated_minutes' => null,
         'actual_minutes' => null,
         'due_at' => null,
         'depends_on_task_id' => null,
-    ]))->toThrow(AuthorizationException::class);
+    ]))->toThrow(ValidationException::class);
 });
 
 it('lets a collaborator create a subtask assigned to themselves', function () {
@@ -147,7 +178,7 @@ it('does not let a collaborator create a subtask in another area', function () {
         'actual_minutes' => null,
         'due_at' => null,
         'depends_on_task_id' => null,
-    ]))->toThrow(AuthorizationException::class);
+    ]))->toThrow(ValidationException::class);
 });
 
 it('requires the dependency to be done before creating a task already in progress', function () {

@@ -7,6 +7,7 @@ use App\Models\Task;
 use App\Models\TaskStatusTransition;
 use App\Models\User;
 use App\TaskStatus;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Mail;
@@ -55,9 +56,18 @@ class MoveTask
         DB::transaction(function () use ($task, $status, $position, $previousStatus, $statusChanged): void {
             $task->update($this->statusAttributes($task, $status));
 
-            $columnTasks = Task::query()
+            $columnQuery = Task::query()
                 ->where('area_id', $task->area_id)
-                ->where('status', $status->value)
+                ->where('status', $status->value);
+
+            if ($status === TaskStatus::Done) {
+                $columnQuery->where(function (Builder $query): void {
+                    $query->where('completed_at', '>=', now()->subDays(7))
+                        ->orWhereNull('completed_at');
+                });
+            }
+
+            $columnTasks = $columnQuery
                 ->orderBy('position')
                 ->orderBy('id')
                 ->get()

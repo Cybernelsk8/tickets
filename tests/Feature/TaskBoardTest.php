@@ -2,12 +2,14 @@
 
 use App\Livewire\Boards\Index;
 use App\Models\Area;
+use App\Models\Attachment;
 use App\Models\Task;
 use App\Models\TaskDependency;
 use App\Models\TaskStatusTransition;
 use App\Models\Ticket;
 use App\Models\User;
 use App\TaskStatus;
+use App\TicketPriority;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Livewire\Livewire;
 
@@ -33,7 +35,7 @@ it('shows ticket tasks and tasks created directly on the board', function () {
         ->assertSee('tareas de tickets y tareas creadas en el tablero.')
         ->assertSee('Tarea desde correo')
         ->assertSee('Tarea creada en el tablero')
-        ->assertSee('+ Nueva');
+        ->assertSee('Nueva tarea');
 });
 
 it('lets an area manager create a subtask with a responsible and times from the board', function () {
@@ -67,11 +69,11 @@ it('lets an area manager create a subtask with a responsible and times from the 
         ->and($task->statusTransitions()->count())->toBe(1);
 });
 
-it('hides task creation from collaborators', function () {
+it('lets a collaborator open the create modal with themselves as responsible', function () {
     $this->seed(RolesAndPermissionsSeeder::class);
 
     $collaborator = User::factory()->colaborador()->create();
-    $area = Area::factory()->create();
+    $area = Area::factory()->create(['manager_id' => null]);
     $collaborator->update(['area_id' => $area->id]);
 
     Task::factory()->create([
@@ -82,9 +84,52 @@ it('hides task creation from collaborators', function () {
 
     Livewire::actingAs($collaborator)->test(Index::class)
         ->assertSee('Tarea del colaborador')
-        ->assertDontSee('+ Nueva')
+        ->assertSee('Nueva tarea')
+        ->call('openCreate', 'done')
+        ->assertSet('assigneeId', $collaborator->id)
+        ->assertSet('targetStatus', 'todo')
+        ->assertSee($collaborator->name);
+});
+
+it('lets a collaborator create a task from the board assigned to themselves', function () {
+    $this->seed(RolesAndPermissionsSeeder::class);
+
+    $collaborator = User::factory()->colaborador()->create();
+    $area = Area::factory()->create(['manager_id' => null]);
+    $collaborator->update(['area_id' => $area->id]);
+
+    Livewire::actingAs($collaborator)->test(Index::class)
+        ->call('openCreate', 'done')
+        ->set('title', 'Tarea creada por el colaborador')
+        ->call('createTask')
+        ->assertHasNoErrors()
+        ->assertSee('Tarea creada por el colaborador');
+
+    $task = Task::where('title', 'Tarea creada por el colaborador')->firstOrFail();
+
+    expect($task->assignee_id)->toBe($collaborator->id)
+        ->and($task->status)->toBe(TaskStatus::Todo)
+        ->and($task->area_id)->toBe($area->id)
+        ->and($task->created_by)->toBe($collaborator->id);
+});
+
+it('does not let a collaborator choose another responsible or initial column', function () {
+    $this->seed(RolesAndPermissionsSeeder::class);
+
+    $collaborator = User::factory()->colaborador()->create();
+    $area = Area::factory()->create(['manager_id' => null]);
+    $collaborator->update(['area_id' => $area->id]);
+    $otherCollaborator = User::factory()->colaborador()->create(['area_id' => $area->id]);
+
+    Livewire::actingAs($collaborator)->test(Index::class)
         ->call('openCreate', 'todo')
-        ->assertForbidden();
+        ->set('title', 'Tarea con responsable ajeno')
+        ->set('assigneeId', $otherCollaborator->id)
+        ->set('targetStatus', 'done')
+        ->call('createTask')
+        ->assertHasErrors(['assigneeId', 'targetStatus']);
+
+    expect(Task::where('title', 'Tarea con responsable ajeno')->count())->toBe(0);
 });
 
 it('lets a collaborator create a subtask from the board assigned to themselves', function () {
@@ -93,7 +138,6 @@ it('lets a collaborator create a subtask from the board assigned to themselves',
     $collaborator = User::factory()->colaborador()->create();
     $area = Area::factory()->create(['manager_id' => null]);
     $collaborator->update(['area_id' => $area->id]);
-    $otherCollaborator = User::factory()->colaborador()->create(['area_id' => $area->id]);
     $parent = Task::factory()->create([
         'area_id' => $area->id,
         'assignee_id' => $collaborator->id,
@@ -102,13 +146,10 @@ it('lets a collaborator create a subtask from the board assigned to themselves',
 
     Livewire::actingAs($collaborator)->test(Index::class)
         ->assertSee('Tarea del colaborador')
-        ->assertDontSee('+ Nueva')
-        ->assertSee('Subtarea')
+        ->assertSee('Nueva tarea')
         ->call('openSubtask', $parent->id)
         ->assertSet('parentTaskId', $parent->id)
         ->set('title', 'Desglose del colaborador')
-        ->set('assigneeId', $otherCollaborator->id)
-        ->set('targetStatus', 'done')
         ->call('createTask')
         ->assertHasNoErrors()
         ->assertSee('Desglose del colaborador');
@@ -247,11 +288,158 @@ it('shows column movements on cards and in the task detail', function () {
     ]);
 
     Livewire::actingAs($manager)->test(Index::class)
+        ->assertDontSee('Movida')
+        ->call('toggleCard', $task->id)
         ->assertSee('Movida')
         ->assertSee('→ En proceso')
         ->call('openDetails', $task->id)
         ->assertSee('Historial de estados y columnas')
         ->assertSee('→ En proceso');
+});
+
+it('labels the pending status as Por hacer', function () {
+    expect(TaskStatus::Todo->label())->toBe('Por hacer');
+});
+
+it('shows the parent task on expanded subtasks without the board origin badge', function () {
+    $this->seed(RolesAndPermissionsSeeder::class);
+
+    $admin = User::factory()->superAdmin()->create();
+    $area = Area::factory()->create();
+    $ticket = Ticket::factory()->create(['area_id' => $area->id]);
+    $ticketTask = Task::factory()->create([
+        'area_id' => $area->id,
+        'ticket_id' => $ticket->id,
+        'title' => 'Tarea desde ticket',
+    ]);
+    $parent = Task::factory()->create(['area_id' => $area->id, 'title' => 'Tarea principal visible']);
+    $subtask = Task::factory()->childOf($parent)->create([
+        'area_id' => $area->id,
+        'title' => 'Subtarea sin ticket',
+    ]);
+
+    Livewire::actingAs($admin)->test(Index::class)
+        ->call('toggleCard', $ticketTask->id)
+        ->assertSee($ticket->code)
+        ->call('toggleCard', $subtask->id)
+        ->assertSee('Subtarea de')
+        ->assertSee('Tarea principal visible')
+        ->assertDontSee('Tablero');
+});
+
+it('expands a task card in place with its current status and badges', function () {
+    $this->seed(RolesAndPermissionsSeeder::class);
+
+    $admin = User::factory()->superAdmin()->create();
+    $area = Area::factory()->create();
+    $task = Task::factory()->create([
+        'area_id' => $area->id,
+        'status' => TaskStatus::InProgress,
+        'priority' => TicketPriority::High,
+        'title' => 'Tarjeta expandible',
+    ]);
+
+    Livewire::actingAs($admin)->test(Index::class)
+        ->assertSee('Tarjeta expandible')
+        ->assertDontSee('En proceso → Pruebas')
+        ->call('toggleCard', $task->id)
+        ->assertSet('expandedTaskId', $task->id)
+        ->assertSee('Pasar a Pruebas')
+        ->assertSeeHtml('data-flux-badge')
+        ->call('toggleCard', $task->id)
+        ->assertSet('expandedTaskId', null)
+        ->assertDontSee('Pasar a Pruebas');
+});
+
+it('exposes card actions through a dropdown with only the vertical dots icon', function () {
+    $this->seed(RolesAndPermissionsSeeder::class);
+
+    $manager = User::factory()->jefeArea()->create();
+    $area = Area::factory()->managedBy($manager)->create();
+    $task = Task::factory()->create(['area_id' => $area->id, 'title' => 'Acciones de tarjeta']);
+
+    Livewire::actingAs($manager)->test(Index::class)
+        ->assertSeeHtml('data-flux-dropdown')
+        ->assertSeeHtml('wire:sort:ignore')
+        ->assertSee('Crear subtarea')
+        ->assertSee('Editar tarea')
+        ->assertDontSeeHtml('wire:click="moveTask('.$task->id.', \'done\')"');
+});
+
+it('shows the assigned collaborator avatar on collapsed cards', function () {
+    $this->seed(RolesAndPermissionsSeeder::class);
+
+    $manager = User::factory()->jefeArea()->create();
+    $area = Area::factory()->managedBy($manager)->create();
+    $collaborator = User::factory()->colaborador()->create([
+        'area_id' => $area->id,
+        'name' => 'Ana Colaboradora',
+    ]);
+    $task = Task::factory()->create([
+        'area_id' => $area->id,
+        'assignee_id' => $collaborator->id,
+        'due_at' => now()->addDay(),
+        'title' => 'Tarea con avatar',
+    ]);
+
+    Livewire::actingAs($manager)->test(Index::class)
+        ->assertSee('Tarea con avatar')
+        ->assertSeeHtml('data-flux-avatar')
+        ->assertSee('Ana Colaboradora');
+});
+
+it('does not render direct state buttons except the in progress to testing transition', function () {
+    $this->seed(RolesAndPermissionsSeeder::class);
+
+    $manager = User::factory()->jefeArea()->create();
+    $area = Area::factory()->managedBy($manager)->create();
+    $task = Task::factory()->create([
+        'area_id' => $area->id,
+        'status' => TaskStatus::Todo,
+        'title' => 'Sin botones de estado',
+    ]);
+
+    Livewire::actingAs($manager)->test(Index::class)
+        ->call('toggleCard', $task->id)
+        ->assertDontSeeHtml('wire:click="moveTask('.$task->id.', \'in_progress\')"')
+        ->assertDontSeeHtml('wire:click="moveTask('.$task->id.', \'done\')"');
+});
+
+it('groups detail attachments by type with file names and a count badge', function () {
+    $this->seed(RolesAndPermissionsSeeder::class);
+
+    $admin = User::factory()->superAdmin()->create();
+    $area = Area::factory()->create();
+    $task = Task::factory()->create(['area_id' => $area->id, 'title' => 'Tarea con adjuntos']);
+
+    Attachment::factory()->create([
+        'attachable_type' => Task::class,
+        'attachable_id' => $task->id,
+        'original_name' => 'foto-uno.png',
+        'mime_type' => 'image/png',
+    ]);
+    Attachment::factory()->create([
+        'attachable_type' => Task::class,
+        'attachable_id' => $task->id,
+        'original_name' => 'foto-dos.jpg',
+        'mime_type' => 'image/jpeg',
+    ]);
+    Attachment::factory()->create([
+        'attachable_type' => Task::class,
+        'attachable_id' => $task->id,
+        'original_name' => 'informe.pdf',
+        'mime_type' => 'application/pdf',
+    ]);
+
+    Livewire::actingAs($admin)->test(Index::class)
+        ->call('openDetails', $task->id)
+        ->assertSeeHtml('data-flux-tooltip')
+        ->assertSeeHtml('data-flux-dropdown')
+        ->assertSee('foto-uno.png, foto-dos.jpg')
+        ->assertSee('informe.pdf')
+        ->assertSeeHtml('absolute -top-1 -end-1 flex size-4')
+        ->assertSeeHtml('size-10')
+        ->assertSeeHtml('target="_blank"');
 });
 
 it('shows the task detail with subtasks, dependencies and status history', function () {

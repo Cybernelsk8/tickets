@@ -18,4 +18,17 @@ enum TicketPriority: string
             self::Urgent => 'Urgente',
         };
     }
+
+    /**
+     * Color del badge usado para representar la prioridad en el tablero.
+     */
+    public function badgeColor(): string
+    {
+        return match ($this) {
+            self::Low => 'zinc',
+            self::Medium => 'blue',
+            self::High => 'amber',
+            self::Urgent => 'rose',
+        };
+    }
 }

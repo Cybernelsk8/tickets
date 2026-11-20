@@ -42,6 +42,7 @@ class CreateTask
             : Task::query()->findOrFail($data['parent_id']);
 
         $isSubtaskOnly = $parent !== null && Gate::denies('create', Task::class);
+        $mustAssignSelf = ! $user instanceof User || ! $user->can('tasks.assign');
 
         if ($isSubtaskOnly) {
             Gate::authorize('createSubtask', $parent);
@@ -55,10 +56,13 @@ class CreateTask
             }
 
             $data['area_id'] = $parentAreaId;
-            $data['assignee_id'] = $user instanceof User ? $user->id : null;
-            $data['status'] = TaskStatus::Todo;
         } else {
             Gate::authorize('create', Task::class);
+        }
+
+        if ($mustAssignSelf) {
+            $data['assignee_id'] = $user instanceof User ? $user->id : null;
+            $data['status'] = TaskStatus::Todo;
         }
 
         $area = Area::query()->findOrFail($data['area_id']);
@@ -105,7 +109,7 @@ class CreateTask
             ]);
         }
 
-        return DB::transaction(function () use ($data, $area, $assignee, $dependency, $isSubtaskOnly): Task {
+        return DB::transaction(function () use ($data, $area, $assignee, $dependency, $parent): Task {
             $nextPosition = (int) Task::query()
                 ->where('area_id', $area->id)
                 ->where('status', $data['status']->value)
@@ -141,7 +145,7 @@ class CreateTask
                 'to_status' => $data['status']->value,
                 'changed_by' => auth()->id(),
                 'occurred_at' => now(),
-                'note' => $isSubtaskOnly
+                'note' => $parent !== null
                     ? __('Subtarea creada desde el tablero.')
                     : __('Tarea creada desde el tablero.'),
             ]);
@@ -163,12 +167,14 @@ class CreateTask
             ]);
         }
 
-        if ($user->hasRole('super_admin') || $user->managedAreas()->whereKey($area->id)->exists()) {
+        if ($user->hasRole('super_admin')
+            || $user->managedAreas()->whereKey($area->id)->exists()
+            || $user->area_id === $area->id) {
             return;
         }
 
         throw ValidationException::withMessages([
-            'area_id' => __('Solo puedes crear tareas en un área que gestionas.'),
+            'area_id' => __('Solo puedes crear tareas en tu área o en un área que gestionas.'),
         ]);
     }
 }

@@ -37,7 +37,7 @@ it('lets assignees view and update their own tasks', function () {
     expect(Gate::forUser($colaborador)->allows('update', $task))->toBeTrue();
 });
 
-it('does not let collaborators create tasks', function () {
+it('does not let collaborators without an area create tasks', function () {
     $this->seed(RolesAndPermissionsSeeder::class);
 
     $colaborador = User::factory()->colaborador()->create();
@@ -66,7 +66,7 @@ it('does not let collaborators reassign tasks', function () {
     expect(Gate::forUser($colaborador)->allows('reassign', $task))->toBeFalse();
 });
 
-it('lets collaborators create subtasks on their own tasks in their area', function () {
+it('lets collaborators create tasks and subtasks in their area', function () {
     $this->seed(RolesAndPermissionsSeeder::class);
 
     $colaborador = User::factory()->colaborador()->create();
@@ -75,7 +75,7 @@ it('lets collaborators create subtasks on their own tasks in their area', functi
     $task = Task::factory()->create(['area_id' => $area->id, 'assignee_id' => $colaborador->id]);
 
     expect(Gate::forUser($colaborador)->allows('createSubtask', $task))->toBeTrue()
-        ->and(Gate::forUser($colaborador)->allows('create', Task::class))->toBeFalse();
+        ->and(Gate::forUser($colaborador)->allows('create', Task::class))->toBeTrue();
 });
 
 it('does not let collaborators create subtasks on tasks from another area', function () {

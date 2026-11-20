@@ -17,7 +17,7 @@ enum TaskStatus: string
     public function label(): string
     {
         return match ($this) {
-            self::Todo => 'Tareas',
+            self::Todo => 'Por hacer',
             self::Assigned => 'Asignado',
             self::InProgress => 'En proceso',
             self::Testing => 'Pruebas',
@@ -44,6 +44,21 @@ enum TaskStatus: string
     public function kanbanColumnLabel(): string
     {
         return $this->kanbanColumn()->label();
+    }
+
+    /**
+     * Color del badge usado para representar el estado en el tablero.
+     */
+    public function badgeColor(): string
+    {
+        return match ($this) {
+            self::Todo => 'zinc',
+            self::Assigned => 'blue',
+            self::InProgress => 'sky',
+            self::Testing => 'violet',
+            self::Done => 'green',
+            self::Blocked => 'rose',
+        };
     }
 
     public function isFinal(): bool

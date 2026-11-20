@@ -83,7 +83,7 @@ class RolesAndPermissionsSeeder extends Seeder
             ],
             'colaborador' => [
                 'tickets.viewOwnArea',
-                'tasks.viewAny', 'tasks.update',
+                'tasks.viewAny', 'tasks.create', 'tasks.update',
                 'comments.create', 'comments.update', 'comments.delete',
                 'attachments.view', 'attachments.create',
             ],

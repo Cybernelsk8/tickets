@@ -30,6 +30,71 @@
                 </flux:field>
             @endif
         </div>
+
+        <div class="mt-4 flex flex-wrap items-end gap-3 rounded-xl border border-zinc-200/80 bg-white p-3 dark:border-zinc-700/60 dark:bg-zinc-900/40">
+            <flux:field class="w-full sm:w-72">
+                <flux:label>{{ __('Buscar') }}</flux:label>
+                <flux:input
+                    wire:model.live.debounce.300ms="search"
+                    :placeholder="__('Título, código de ticket o responsable')"
+                />
+            </flux:field>
+
+            <flux:field class="w-full sm:w-52">
+                <flux:label>{{ __('Responsable') }}</flux:label>
+                <flux:select wire:model.live="filterAssigneeId">
+                    <flux:select.option value="">{{ __('Todos') }}</flux:select.option>
+                    @foreach ($this->filterAssignees as $assignee)
+                        <flux:select.option :value="(string) $assignee->id" wire:key="board-filter-assignee-{{ $assignee->id }}">
+                            {{ $assignee->name }}
+                        </flux:select.option>
+                    @endforeach
+                </flux:select>
+            </flux:field>
+
+            <flux:field class="w-full sm:w-44">
+                <flux:label>{{ __('Prioridad') }}</flux:label>
+                <flux:select wire:model.live="filterPriority">
+                    <flux:select.option value="">{{ __('Todas') }}</flux:select.option>
+                    @foreach (\App\TicketPriority::cases() as $case)
+                        <flux:select.option :value="$case->value" wire:key="board-filter-priority-{{ $case->value }}">
+                            {{ $case->label() }}
+                        </flux:select.option>
+                    @endforeach
+                </flux:select>
+            </flux:field>
+
+            <flux:field class="w-full sm:w-48">
+                <flux:label>{{ __('Fecha límite') }}</flux:label>
+                <flux:select wire:model.live="filterDue">
+                    @foreach ($this->dueFilterOptions() as $option)
+                        <flux:select.option :value="$option['id']" wire:key="board-filter-due-{{ $option['id'] }}">
+                            {{ $option['label'] }}
+                        </flux:select.option>
+                    @endforeach
+                </flux:select>
+            </flux:field>
+
+            <div class="flex items-end gap-2">
+                <flux:button
+                    size="sm"
+                    :variant="$viewMode === 'board' ? 'primary' : 'ghost'"
+                    wire:click="setViewMode('board')"
+                >
+                    {{ __('Kanban') }}
+                </flux:button>
+                <flux:button
+                    size="sm"
+                    :variant="$viewMode === 'list' ? 'primary' : 'ghost'"
+                    wire:click="setViewMode('list')"
+                >
+                    {{ __('Lista') }}
+                </flux:button>
+                <flux:button size="sm" variant="ghost" wire:click="clearFilters">
+                    {{ __('Limpiar') }}
+                </flux:button>
+            </div>
+        </div>
     </div>
 
     @error('board')
@@ -40,30 +105,31 @@
         <flux:card>
             <flux:text>{{ __('No tienes áreas disponibles para mostrar un tablero.') }}</flux:text>
         </flux:card>
-    @else
+    @elseif ($viewMode === 'board')
         <div class="grid gap-4 lg:grid-cols-3">
             @foreach ($this->columns as $column)
-                <flux:card class="min-h-[24rem]">
-                    <div class="flex items-center justify-between gap-2">
-                        <flux:heading size="sm">
-                            {{ $column['label'] }}
-                            <span class="text-zinc-400">({{ $column['tasks']->count() }})</span>
-                        </flux:heading>
+                <section class="flex min-h-[24rem] flex-col rounded-xl border border-zinc-200/80 bg-zinc-50/60 p-3 dark:border-zinc-700/60 dark:bg-zinc-900/40">
+                    <div class="flex items-center justify-between gap-2 px-1">
+                        <div class="flex items-baseline gap-2">
+                            <flux:heading size="sm">{{ $column['label'] }}</flux:heading>
+                            <span class="text-xs text-zinc-400">{{ $column['total'] }}</span>
+                        </div>
 
                         @can('create', \App\Models\Task::class)
-                            <flux:button
-                                size="xs"
-                                variant="ghost"
-                                wire:click="openCreate('{{ $column['id'] }}')"
-                                wire:sort:ignore
-                            >
-                                {{ __('+ Nueva') }}
-                            </flux:button>
+                            <flux:tooltip :content="__('Nueva tarea')" position="bottom">
+                                <flux:button
+                                    size="xs"
+                                    variant="ghost"
+                                    icon="plus"
+                                    wire:click="openCreate('{{ $column['id'] }}')"
+                                    wire:sort:ignore
+                                />
+                            </flux:tooltip>
                         @endcan
                     </div>
 
                     <div
-                        class="mt-3 flex min-h-[18rem] flex-col gap-2"
+                        class="mt-3 flex min-h-[18rem] flex-1 flex-col gap-2"
                         wire:sort="handleSort"
                         wire:sort:group="board-tasks"
                         wire:sort:group-id="{{ $column['id'] }}"
@@ -75,36 +141,100 @@
                                         ? $task->area->color
                                         : '#71717a';
                                 $movement = $this->latestColumnMovement($task);
+                                $isExpanded = $expandedTaskId === $task->id;
+                                $quickTransitions = $this->quickTransitions($task);
                             @endphp
                             <div
                                 wire:key="board-task-{{ $task->id }}"
                                 wire:sort:item="{{ $task->id }}"
-                                class="rounded-lg border border-zinc-200 border-l-4 bg-white p-3 shadow-sm dark:border-zinc-700 dark:bg-zinc-900"
-                                style="border-left-color: {{ $areaColor }}"
+                                wire:click="toggleCard({{ $task->id }})"
+                                class="group relative cursor-pointer rounded-lg border border-zinc-200/80 bg-white p-3 shadow-xs transition hover:border-zinc-300 hover:shadow-sm dark:border-zinc-700/70 dark:bg-zinc-900"
                             >
-                                <div class="flex gap-2">
-                                    <div
-                                        wire:sort:handle
-                                        class="cursor-grab select-none px-1 text-zinc-400"
-                                        title="{{ __('Arrastrar para reordenar') }}"
+                                <div wire:sort:ignore @click.stop class="absolute start-2 top-2 z-10">
+                                    <flux:dropdown position="bottom" align="start">
+                                        <flux:button
+                                            icon="ellipsis-vertical"
+                                            size="xs"
+                                            variant="ghost"
+                                            :tooltip="__('Acciones')"
+                                        />
+
+                                        <flux:menu>
+                                            <flux:menu.item
+                                                icon="eye"
+                                                wire:click.stop="openDetails({{ $task->id }})"
+                                            >
+                                                {{ __('Ver detalle') }}
+                                            </flux:menu.item>
+
+                                            @can('createSubtask', $task)
+                                                <flux:menu.item
+                                                    icon="plus"
+                                                    wire:click.stop="openSubtask({{ $task->id }})"
+                                                >
+                                                    {{ __('Crear subtarea') }}
+                                                </flux:menu.item>
+                                            @endcan
+
+                                            @can('update', $task)
+                                                <flux:menu.item
+                                                    icon="pencil-square"
+                                                    wire:click.stop="openEdit({{ $task->id }})"
+                                                >
+                                                    {{ __('Editar tarea') }}
+                                                </flux:menu.item>
+                                            @endcan
+                                        </flux:menu>
+                                    </flux:dropdown>
+                                </div>
+
+                                <div class="flex items-start justify-between gap-2 ps-6">
+                                    <p
+                                        class="min-w-0 flex-1 truncate text-sm font-medium text-zinc-800 dark:text-zinc-100"
+                                        title="{{ $task->title }}"
                                     >
-                                        ⠿
-                                    </div>
+                                        {{ $task->title }}
+                                    </p>
 
-                                    <div wire:sort:ignore class="min-w-0 flex-1">
-                                        <p class="break-words text-sm font-medium text-zinc-800 dark:text-zinc-100">
-                                            {{ $task->title }}
-                                        </p>
+                                    @if ($task->assignee)
+                                        <flux:avatar
+                                            circle
+                                            size="xs"
+                                            color="auto"
+                                            color:seed="{{ $task->assignee_id }}"
+                                            name="{{ $task->assignee->name }}"
+                                            :tooltip="$task->due_at
+                                                ? __(':name · vence :date', [
+                                                    'name' => $task->assignee->name,
+                                                    'date' => $task->due_at->format('d/m/Y'),
+                                                ])
+                                                : __(':name · sin fecha límite', ['name' => $task->assignee->name])"
+                                            tooltip:position="top"
+                                        />
+                                    @else
+                                        <flux:avatar
+                                            circle
+                                            size="xs"
+                                            icon="user"
+                                            :tooltip="__('Sin responsable')"
+                                            tooltip:position="top"
+                                        />
+                                    @endif
+                                </div>
 
-                                        <p class="mt-1 text-xs font-medium" style="color: {{ $areaColor }}">
-                                            {{ $task->area?->name ?? __('Sin área') }}
-                                        </p>
+                                @if ($isExpanded)
+                                    <div class="mt-3 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+                                        <div class="flex flex-wrap items-center gap-1.5">
+                                            <flux:badge size="sm" :color="$task->status->badgeColor()">
+                                                {{ $task->status->label() }}
+                                            </flux:badge>
 
-                                        <div class="mt-1 flex flex-wrap items-center gap-1 text-xs text-zinc-500">
+                                            <flux:badge size="sm" :color="$task->priority->badgeColor()">
+                                                {{ $task->priority->label() }}
+                                            </flux:badge>
+
                                             @if ($task->ticket)
-                                                <flux:badge size="sm">{{ $task->ticket->code }}</flux:badge>
-                                            @else
-                                                <flux:badge size="sm" color="zinc">{{ __('Tablero') }}</flux:badge>
+                                                <flux:badge size="sm" color="sky">{{ $task->ticket->code }}</flux:badge>
                                             @endif
 
                                             @if ($task->parent)
@@ -114,20 +244,29 @@
                                             @if ($task->status === \App\TaskStatus::Blocked)
                                                 <flux:badge size="sm" color="rose">{{ __('Bloqueado') }}</flux:badge>
                                             @endif
+                                        </div>
 
-                                            <flux:badge size="sm">{{ $task->priority->label() }}</flux:badge>
+                                        @if ($task->parent)
+                                            <p class="mt-2 text-xs text-amber-700 dark:text-amber-400">
+                                                {{ __('Subtarea de') }}:
+                                                <span class="font-medium">{{ $task->parent->title }}</span>
+                                            </p>
+                                        @endif
+
+                                        <div class="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-zinc-500">
+                                            <span class="size-2 rounded-full" style="background-color: {{ $areaColor }}"></span>
+                                            <span>{{ $task->area?->name ?? __('Sin área') }}</span>
+                                            <span>·</span>
+                                            <span>{{ $task->status->kanbanColumnLabel() }}</span>
 
                                             @if ($task->due_at)
-                                                <span>{{ $task->due_at->format('d/m/Y') }}</span>
+                                                <span>·</span>
+                                                <span>{{ __('Vence') }} {{ $task->due_at->format('d/m/Y') }}</span>
                                             @endif
                                         </div>
 
-                                        <p class="mt-2 text-xs text-zinc-500">
-                                            {{ $task->assignee?->name ?? __('Sin responsable') }}
-                                        </p>
-
                                         @if ($movement)
-                                            <p class="mt-1 text-xs text-sky-600 dark:text-sky-400">
+                                            <p class="mt-2 text-xs text-sky-600 dark:text-sky-400">
                                                 {{ __('Movida') }}:
                                                 {{ $movement->fromColumnLabel() ?? __('Inicio') }}
                                                 → {{ $movement->toColumnLabel() }}
@@ -138,42 +277,33 @@
                                         @endif
 
                                         @if ($task->dependencies->contains(fn ($dependency) => $dependency->dependsOnTask?->status !== \App\TaskStatus::Done))
-                                            <p class="mt-1 text-xs text-amber-600">
+                                            <p class="mt-2 text-xs text-amber-600">
                                                 {{ __('Dependencia pendiente') }}
                                             </p>
                                         @endif
 
-                                        <div class="mt-2 flex flex-wrap gap-1">
-                                            <flux:button size="xs" variant="ghost" wire:click="openDetails({{ $task->id }})">
+                                        <div class="mt-3 flex flex-wrap items-center justify-between gap-2">
+                                            <flux:button
+                                                size="xs"
+                                                variant="ghost"
+                                                icon="eye"
+                                                wire:click.stop="openDetails({{ $task->id }})"
+                                            >
                                                 {{ __('Detalle') }}
                                             </flux:button>
 
-                                            @can('createSubtask', $task)
-                                                <flux:button size="xs" variant="ghost" wire:click="openSubtask({{ $task->id }})">
-                                                    {{ __('Subtarea') }}
+                                            @foreach ($quickTransitions as $transition)
+                                                <flux:button
+                                                    size="xs"
+                                                    variant="ghost"
+                                                    wire:click.stop="moveTask({{ $task->id }}, '{{ $transition['value'] }}')"
+                                                >
+                                                    {{ __('Pasar a :status', ['status' => $transition['label']]) }}
                                                 </flux:button>
-                                            @endcan
-
-                                            @can('update', $task)
-                                                <flux:button size="xs" variant="ghost" wire:click="openEdit({{ $task->id }})">
-                                                    {{ __('Editar') }}
-                                                </flux:button>
-                                            @endcan
-
-                                            @foreach (\App\TaskStatus::cases() as $status)
-                                                @if ($task->status->canTransitionTo($status))
-                                                    <flux:button
-                                                        size="xs"
-                                                        variant="ghost"
-                                                        wire:click="moveTask({{ $task->id }}, '{{ $status->value }}')"
-                                                    >
-                                                        {{ $status->label() }}
-                                                    </flux:button>
-                                                @endif
                                             @endforeach
                                         </div>
                                     </div>
-                                </div>
+                                @endif
                             </div>
                         @empty
                             <div class="rounded-lg border border-dashed border-zinc-300 p-4 text-center text-xs text-zinc-400 dark:border-zinc-700">
@@ -181,20 +311,136 @@
                             </div>
                         @endforelse
                     </div>
-                </flux:card>
+
+                    @if ($column['hasMore'])
+                        <flux:button
+                            size="xs"
+                            variant="ghost"
+                            class="mt-2 w-full"
+                            wire:click.preserve-scroll="loadMore('{{ $column['id'] }}')"
+                        >
+                            {{ __('Cargar más') }}
+                        </flux:button>
+                    @endif
+
+                    @if ($column['id'] === 'done' && $this->historyGroups !== [])
+                        <div class="mt-3 border-t border-zinc-200 pt-3 dark:border-zinc-700">
+                            <flux:heading size="sm">{{ __('Historial por fecha') }}</flux:heading>
+
+                            @foreach ($this->historyGroups as $group)
+                                <div class="mt-2" wire:key="history-group-{{ $group['month'] }}">
+                                    <button
+                                        type="button"
+                                        class="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-start text-xs font-medium text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                                        wire:click="toggleHistoryGroup('{{ $group['month'] }}')"
+                                    >
+                                        <span>{{ $group['label'] }}</span>
+                                        <span class="text-zinc-400">{{ $group['total'] }}</span>
+                                    </button>
+
+                                    @if ($openHistoryGroup === $group['month'])
+                                        @php($historyTasks = $this->historyTasks($group['month']))
+                                        <div class="mt-1 space-y-1">
+                                            @forelse ($historyTasks as $historyTask)
+                                                <div
+                                                    class="flex items-center justify-between gap-2 rounded-md bg-white px-2 py-1.5 text-xs dark:bg-zinc-900"
+                                                    wire:key="history-task-{{ $historyTask->id }}"
+                                                >
+                                                    <span class="min-w-0 flex-1 truncate" title="{{ $historyTask->title }}">
+                                                        {{ $historyTask->title }}
+                                                    </span>
+                                                    <flux:button
+                                                        size="xs"
+                                                        variant="ghost"
+                                                        icon="eye"
+                                                        wire:click="openDetails({{ $historyTask->id }})"
+                                                    />
+                                                </div>
+                                            @empty
+                                                <flux:text class="px-2 text-xs">{{ __('Sin tareas en este periodo.') }}</flux:text>
+                                            @endforelse
+
+                                            {{ $historyTasks->links() }}
+                                        </div>
+                                    @endif
+                                </div>
+                            @endforeach
+                        </div>
+                    @endif
+                </section>
             @endforeach
         </div>
+    @else
+        <flux:card>
+            <div class="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                    <flux:heading size="sm">{{ __('Lista de tareas') }}</flux:heading>
+                    <flux:text class="mt-1">
+                        {{ trans_choice(':count resultado|:count resultados', $this->listTasks->total(), ['count' => $this->listTasks->total()]) }}
+                    </flux:text>
+                </div>
+            </div>
+
+            <flux:table :paginate="$this->listTasks" bleed container:class="mt-4">
+                <flux:table.columns>
+                    <flux:table.column>{{ __('Tarea') }}</flux:table.column>
+                    <flux:table.column>{{ __('Área') }}</flux:table.column>
+                    <flux:table.column>{{ __('Responsable') }}</flux:table.column>
+                    <flux:table.column>{{ __('Estado') }}</flux:table.column>
+                    <flux:table.column>{{ __('Prioridad') }}</flux:table.column>
+                    <flux:table.column>{{ __('Vencimiento') }}</flux:table.column>
+                </flux:table.columns>
+
+                <flux:table.rows>
+                    @forelse ($this->listTasks as $task)
+                        <flux:table.row :key="$task->id" wire:key="list-task-{{ $task->id }}">
+                            <flux:table.cell variant="strong">
+                                <button
+                                    type="button"
+                                    class="text-start font-medium text-blue-600 hover:underline dark:text-blue-400"
+                                    wire:click="openDetails({{ $task->id }})"
+                                >
+                                    {{ $task->title }}
+                                </button>
+                            </flux:table.cell>
+                            <flux:table.cell>{{ $task->area?->name ?? '—' }}</flux:table.cell>
+                            <flux:table.cell>{{ $task->assignee?->name ?? __('Sin responsable') }}</flux:table.cell>
+                            <flux:table.cell class="py-0">
+                                <flux:badge size="sm" :color="$task->status->badgeColor()">
+                                    {{ $task->status->label() }}
+                                </flux:badge>
+                            </flux:table.cell>
+                            <flux:table.cell class="py-0">
+                                <flux:badge size="sm" :color="$task->priority->badgeColor()">
+                                    {{ $task->priority->label() }}
+                                </flux:badge>
+                            </flux:table.cell>
+                            <flux:table.cell>{{ $task->due_at?->format('d/m/Y') ?? '—' }}</flux:table.cell>
+                        </flux:table.row>
+                    @empty
+                        <flux:table.row>
+                            <flux:table.cell colspan="6">
+                                <flux:text class="text-sm">{{ __('No hay tareas que coincidan con los filtros.') }}</flux:text>
+                            </flux:table.cell>
+                        </flux:table.row>
+                    @endforelse
+                </flux:table.rows>
+            </flux:table>
+        </flux:card>
     @endif
 
     <flux:modal wire:model.self="showCreateModal" name="create-task" class="md:w-2xl">
+        @php($canCreateTask = $this->canCreateTask())
         @php($canChooseAssignee = $this->canChooseAssignee())
 
         <form wire:submit="createTask" class="flex flex-col gap-4">
             <div>
-                <flux:heading size="lg">{{ $canChooseAssignee ? __('Nueva tarea') : __('Nueva subtarea') }}</flux:heading>
+                <flux:heading size="lg">{{ $canCreateTask ? __('Nueva tarea') : __('Nueva subtarea') }}</flux:heading>
                 <flux:text class="mt-1">
-                    {{ $canChooseAssignee
-                        ? __('Puedes crear una tarea independiente o un desglose de otra tarea.')
+                    {{ $canCreateTask
+                        ? ($canChooseAssignee
+                            ? __('Puedes crear una tarea independiente o un desglose de otra tarea.')
+                            : __('La tarea se asignará a ti y comenzará en Por hacer.'))
                         : __('Divide esta tarea en pasos más pequeños. La subtarea se asignará a ti.') }}
                 </flux:text>
             </div>
@@ -212,7 +458,7 @@
             </flux:field>
 
             <div class="grid gap-4 sm:grid-cols-2">
-                @if ($canChooseAssignee)
+                @if ($canCreateTask)
                     <flux:field>
                         <flux:label>{{ __('Tarea padre (opcional)') }}</flux:label>
                         <flux:select wire:model="parentTaskId">
@@ -226,30 +472,44 @@
                         <flux:error name="parentTaskId" />
                     </flux:field>
 
-                    <flux:field>
-                        <flux:label>{{ __('Responsable') }}</flux:label>
-                        <flux:select wire:model="assigneeId">
-                            <flux:select.option value="">{{ __('Sin responsable') }}</flux:select.option>
-                            @foreach ($this->assignees as $assignee)
-                                <flux:select.option :value="(string) $assignee->id" wire:key="new-task-assignee-{{ $assignee->id }}">
-                                    {{ $assignee->name }}
-                                </flux:select.option>
-                            @endforeach
-                        </flux:select>
-                        <flux:error name="assigneeId" />
-                    </flux:field>
+                    @if ($canChooseAssignee)
+                        <flux:field>
+                            <flux:label>{{ __('Responsable') }}</flux:label>
+                            <flux:select wire:model="assigneeId">
+                                <flux:select.option value="">{{ __('Sin responsable') }}</flux:select.option>
+                                @foreach ($this->assignees as $assignee)
+                                    <flux:select.option :value="(string) $assignee->id" wire:key="new-task-assignee-{{ $assignee->id }}">
+                                        {{ $assignee->name }}
+                                    </flux:select.option>
+                                @endforeach
+                            </flux:select>
+                            <flux:error name="assigneeId" />
+                        </flux:field>
+                    @else
+                        <flux:field>
+                            <flux:label>{{ __('Responsable') }}</flux:label>
+                            <flux:input :value="auth()->user()?->name ?? ''" disabled />
+                        </flux:field>
+                    @endif
 
-                    <flux:field>
-                        <flux:label>{{ __('Columna inicial') }}</flux:label>
-                        <flux:select wire:model="targetStatus">
-                            @foreach ($this->columns as $column)
-                                <flux:select.option :value="$column['id']" wire:key="new-task-status-{{ $column['id'] }}">
-                                    {{ $column['label'] }}
-                                </flux:select.option>
-                            @endforeach
-                        </flux:select>
-                        <flux:error name="targetStatus" />
-                    </flux:field>
+                    @if ($canChooseAssignee)
+                        <flux:field>
+                            <flux:label>{{ __('Columna inicial') }}</flux:label>
+                            <flux:select wire:model="targetStatus">
+                                @foreach ($this->columns as $column)
+                                    <flux:select.option :value="$column['id']" wire:key="new-task-status-{{ $column['id'] }}">
+                                        {{ $column['label'] }}
+                                    </flux:select.option>
+                                @endforeach
+                            </flux:select>
+                            <flux:error name="targetStatus" />
+                        </flux:field>
+                    @else
+                        <flux:field>
+                            <flux:label>{{ __('Columna inicial') }}</flux:label>
+                            <flux:input :value="\App\TaskStatus::Todo->kanbanColumnLabel()" disabled />
+                        </flux:field>
+                    @endif
                 @else
                     <flux:field>
                         <flux:label>{{ __('Tarea padre') }}</flux:label>
@@ -319,7 +579,7 @@
                     <flux:button variant="ghost">{{ __('Cancelar') }}</flux:button>
                 </flux:modal.close>
                 <flux:button type="submit" variant="primary" wire:loading.attr="disabled">
-                    {{ $canChooseAssignee ? __('Crear tarea') : __('Crear subtarea') }}
+                    {{ $canCreateTask ? __('Crear tarea') : __('Crear subtarea') }}
                 </flux:button>
             </div>
         </form>
@@ -554,30 +814,14 @@
                                     <p class="mt-1 whitespace-pre-line break-words">{{ $comment->body }}</p>
                                 @endif
 
-                                @foreach ($comment->attachments as $attachment)
-                                    <a
-                                        class="mt-1 block text-xs text-blue-600 underline dark:text-blue-400"
-                                        href="{{ route('attachments.download', $attachment) }}"
-                                        wire:navigate
-                                    >
-                                        {{ $attachment->original_name }}
-                                    </a>
-                                @endforeach
+                                <x-attachment-icons :groups="$this->attachmentGroups($comment->attachments)" />
                             </div>
                         @endcan
                     @empty
                         <flux:text class="mt-1">{{ __('Sin comentarios todavía.') }}</flux:text>
                     @endforelse
 
-                    @foreach ($detail->attachments as $attachment)
-                        <a
-                            class="mt-1 block text-xs text-blue-600 underline dark:text-blue-400"
-                            href="{{ route('attachments.download', $attachment) }}"
-                            wire:navigate
-                        >
-                            {{ $attachment->original_name }}
-                        </a>
-                    @endforeach
+                    <x-attachment-icons :groups="$this->attachmentGroups($detail->attachments)" />
 
                     @if ($this->canCommentOn($detail))
                         <form wire:submit="addComment" class="mt-3 flex flex-col gap-3">
