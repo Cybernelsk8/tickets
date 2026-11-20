@@ -203,31 +203,31 @@ tests/Feature/... tests/Unit/...
 - **Aceptación:** asignar un ticket dispara correo al remitente y crea la tarea raíz en el área. Verificado con 94 tests en verde. **Pendiente para operación real:** SMTP real y conexión a buzón con la cuenta configurada en la UI.
 
 ### Fase 4 — Kanban y gestión de proyectos (L)
-- [ ] Componente Livewire `TicketBoard` por área con 4 columnas y DnD (`wire:sort` de Livewire 4; verificar API con `search-docs` antes de implementar).
-- [ ] Action `MoveTask`: valida transición permitida, autoriza, actualiza `position` y registra `task_status_transitions`.
-- [ ] Creación y desglose de subtareas desde la columna Tareas (jefe de área), con título y descripción larga.
-- [ ] Asignación directa a colaborador del área (sin crear subtareas) y a cada subtarea.
-- [ ] Tiempos opcionales: estimado, real, fecha límite; validación numérica.
-- [ ] Dependencias `finish_to_start`: bloquear inicio si la dependencia no está terminada.
-- [ ] Vista detalle de tarea/proyecto: descripción, subtareas, dependencias, adjuntos, comentarios, historial.
-- [ ] Tests: DnD por Livewire, transiciones válidas/inválidas, dependencias, permisos de jefe, QUIÉN puede desglosar.
-- **Aceptación:** el jefe convierte ticket en proyecto con subtareas dependientes; arrastrar cambia estado y fecha; un colaborador ajeno no puede mover tareas.
+- [x] Componente Livewire del tablero con DnD (`wire:sort` de Livewire 4), resuelto como tablero único de 3 columnas con scopes `Mis tareas | Mi área | Todas`.
+- [x] Action `MoveTask`: valida transición permitida, autoriza, actualiza `position` y registra `task_status_transitions`.
+- [x] Creación y desglose de subtareas desde el tablero, con título y descripción larga.
+- [x] Asignación directa a colaborador del área (sin crear subtareas) y a cada subtarea, con reasignación integrada en `Editar tarea`.
+- [x] Tiempos opcionales: estimado, real, fecha límite; validación numérica.
+- [x] Dependencias `finish_to_start`: bloquear inicio si la dependencia no está terminada.
+- [x] Vista detalle de tarea/proyecto: descripción, subtareas, dependencias, adjuntos, comentarios, historial.
+- [x] Tests: DnD por Livewire, transiciones válidas/inválidas, dependencias, permisos de jefe, QUIÉN puede desglosar.
+- **Aceptación:** el jefe convierte ticket en proyecto con subtareas dependientes; arrastrar cambia estado y fecha; un colaborador ajeno no puede mover tareas. Verificado con la suite completa en verde.
 
 ### Fase 5 — Flujo del colaborador y trazabilidad (M)
-- [ ] Página "Mis tareas" con el mismo tablero filtrado por `assignee_id`.
-- [ ] Cambio a `en_proceso` y a `pruebas` con validación (checklist/adjunto obligatorio opcional antes de `terminado`).
-- [ ] Comentarios con texto, enlaces, capturas/fotos/archivos; `is_internal` para feedback del superior.
-- [ ] Visibilidad de comentarios internos para jefe/designado; notificación al superior cuando hay cambios.
-- [ ] Descarga segura de adjuntos por ruta autorizada.
-- [ ] Tests: comentario interno vs público, subida con MIME inválido, visibilidad del superior, historial completo.
-- **Aceptación:** colaborador mueve sus tareas y deja evidencia; jefe ve feedback y fechas de cada etapa.
+- [x] Página "Mis tareas" integrada como scope del tablero unificado filtrado por `assignee_id`.
+- [x] Cambio a `en_proceso` y a `pruebas` con validación; evidencia opcional antes de `terminado`.
+- [x] Comentarios con texto, enlaces, capturas/fotos/archivos; `is_internal` para feedback del superior.
+- [x] Visibilidad de comentarios internos para jefe/designado; notificación al superior cuando hay cambios.
+- [x] Descarga segura de adjuntos por ruta autorizada.
+- [x] Tests: comentario interno vs público, subida con MIME inválido, visibilidad del superior, historial completo.
+- **Aceptación:** colaborador mueve sus tareas y deja evidencia; jefe ve feedback y fechas de cada etapa. Verificado con la suite completa en verde.
 
 ### Fase 6 — Dashboard y gráficas (M)
-- [ ] Queries agregadas (optimizadas e indexadas) para KPIs: totales por estado, por área, por prioridad/categoría, % completados, tiempo promedio por etapa, tickets recientes, tendencia semanal, carga por colaborador, cumplimiento de plazos.
-- [ ] Componente ApexCharts reutilizable (IDs únicos, `wire:ignore`, actualización vía Livewire).
-- [ ] Vista Dashboard con filtros (rango de fechas, área, categoría, responsable) y permisos por rol.
-- [ ] Tests: métricas con datos sembrados, filtros, acceso restringido.
-- **Aceptación:** gráficas renderizan sin errores JS y los KPIs coinciden con datos sembrados.
+- [x] Queries agregadas (optimizadas e indexadas) para KPIs: totales por estado, por área, por prioridad/categoría, % completados, tiempo promedio por etapa, tickets recientes, tendencia semanal, carga por colaborador, cumplimiento de plazos.
+- [x] Componente ApexCharts reutilizable (IDs únicos, `wire:ignore`, actualización vía Livewire).
+- [x] Vista Dashboard con filtros (rango de fechas, área, categoría, responsable) y permisos por rol.
+- [x] Tests: métricas con datos sembrados, filtros, acceso restringido.
+- **Aceptación:** gráficas renderizan sin errores JS y los KPIs coinciden con datos sembrados. Verificado con suite completa en verde y browser logs sin errores tras la recarga.
 
 ### Fase 7 — Hardening y entrega (S–M)
 - [ ] Configurar SMTP real, `storage:link`, queue worker y scheduler en producción.

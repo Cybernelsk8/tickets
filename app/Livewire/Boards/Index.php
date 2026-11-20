@@ -511,9 +511,13 @@ class Index extends Component
     {
         $date = Carbon::createFromFormat('!Y-m', $month);
 
-        return $date instanceof Carbon
-            ? $date->locale('es')->translatedFormat('F Y')
-            : $month;
+        if (! $date instanceof Carbon) {
+            return $month;
+        }
+
+        $date->locale('es');
+
+        return $date->translatedFormat('F Y');
     }
 
     /**

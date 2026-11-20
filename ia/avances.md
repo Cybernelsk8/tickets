@@ -14,10 +14,80 @@
 | 1 — Cimientos | ✅ Completada | Dependencias, migraciones, modelos, factories, seeders, policies, navegación y pruebas |
 | 2 — Cliente de correo | ✅ Completada | IMAP desacoplado, sincronización, hilos, adjuntos privados y bandeja funcional |
 | 3 — Ticket y notificación | ✅ Completada | Conversión desde bandeja, asignación, tarea raíz y correo encolado al remitente |
-| 4 — Kanban/proyectos | ⏳ Pendiente | Siguiente fase: subtareas, dependencias, DnD, tiempos |
-| 5 — Colaborador/trazabilidad | ⏳ Pendiente | Mis tareas, comentarios, historial |
-| 6 — Dashboard | ⏳ Pendiente | ApexCharts y KPIs |
+| 4 — Kanban/proyectos | ✅ Completada | Tablero único de 3 columnas, scopes, DnD, subtareas, dependencias, tiempos y vista detalle |
+| 5 — Colaborador/trazabilidad | ✅ Completada | Mis tareas, comentarios/adjuntos privados, evidencia antes de Done y notificación al superior |
+| 6 — Dashboard | ✅ Completada | KPIs agregados/indexados, gráficas ApexCharts, filtros y permisos por rol |
 | 7 — Hardening | ⏳ Pendiente | Colas, scheduler, seguridad, pruebas finales |
+
+---
+
+## 2026-11-20 — Fase 6: Dashboard y gráficas ✅
+
+- **Fase:** 6 (Dashboard y gráficas) completada e integrada con el tablero unificado.
+- **Qué se hizo:**
+   - Creado `App\Actions\Reports\BuildDashboardReport`: una sola capa de agregación para KPIs de tickets y tareas, con alcance por rol (`super_admin`/`reports.view` → todas las áreas activas, `reports.viewOwnArea` → áreas gestionadas, colaborador → solo sus datos) y filtros validados de fecha, área, categoría y responsable.
+   - Calculados totales de tickets, abiertos, tareas, terminadas, `% completadas`, vencidas, ciclo promedio, distribución por estado/área/prioridad/categoría, tendencia semanal, carga por colaborador, tiempos por etapa y tickets recientes con relaciones eager-loadadas.
+   - Reemplazado `app/Livewire/Dashboard/Index.php` por un componente con propiedades computadas cacheadas, invalidación explícita al cambiar filtros y `clearFilters()`.
+   - Rehecha `resources/views/livewire/dashboard/index.blade.php` con KPIs, tabla de tickets recientes y seis gráficas ApexCharts; el dashboard sigue accesible para cualquier usuario autenticado pero los datos se limitan por permisos.
+   - Creado el componente reutilizable `resources/views/components/apex-chart.blade.php` con `wire:ignore`, `wire:key` único por combinación de filtros, `ApexCharts` global expuesto desde `resources/js/app.js` y destrucción al reemplazarse.
+   - Añadida la migración `add_dashboard_report_indexes_to_tasks_and_tickets_tables` con índices `(area_id, created_at)` y `(created_at)` en `tasks` y `tickets`.
+   - Extendido `tests/Feature/DashboardReportTest.php` con métricas sembradas, alcance por rol, filtros combinados, render Livewire, escape de HTML y restricción por área.
+- **Archivos creados/modificados (resumen):**
+   - Nuevos: `app/Actions/Reports/BuildDashboardReport.php`, migración `2026_11_20_212650_add_dashboard_report_indexes_to_tasks_and_tickets_tables.php`, `resources/views/components/apex-chart.blade.php`, `tests/Feature/DashboardReportTest.php`.
+   - Modificados: `app/Livewire/Dashboard/Index.php`, `resources/views/livewire/dashboard/index.blade.php`, `resources/js/app.js`, `app/Livewire/Boards/Index.php` (corrección de tipo en `historyMonthLabel`), `ia/planificacion.md` e `ia/avances.md`.
+- **Pruebas ejecutadas:**
+   - `php artisan test --compact tests/Feature/DashboardReportTest.php tests/Feature/DashboardTest.php` → **8/8 en verde, 41 aserciones**.
+   - `php artisan test --compact` → **178/178 en verde, 550 aserciones**.
+   - `vendor/bin/phpstan analyse --no-progress` → **0 errores**.
+   - `vendor/bin/pint --dirty --format agent` → aplicado.
+   - `npm run build` → correcto (ApexCharts incluido en el bundle).
+   - `php artisan migrate --force` → migración aplicada; `SHOW INDEX` confirma los cuatro índices nuevos.
+   - Browser logs en `http://localhost:8000/dashboard` → sin errores JS tras la recarga de Vite.
+- **Problemas / bloqueos resueltos:**
+   - `now()` devuelve `CarbonImmutable`; el bucle de semanas no avanzaba al llamar `addWeek()` sin reasignar y el tipado estricto de `Carbon` rechazaba el valor. Se cambió a `CarbonInterface` y se reasigna el cursor.
+   - Un proceso de prueba cancelado dejó un `metadata lock` en `tickets_test`; se liberaron las conexiones antes de repetir la suite.
+   - El JSON de configuración dentro de `x-data` con comillas dobles rompía el atributo HTML y causaba `init is not defined` en Alpine; se cambió el atributo a comillas simples y se validó el HTML renderizado.
+   - PHPStan detectó propiedades dinámicas de las consultas AVG y comparaciones imposibles; se resolvió leyendo `getAttributes()` y comparando con `''` para claves de colección.
+- **Decisiones nuevas / pendientes:**
+   - No se crearon permisos nuevos: se reutilizan `reports.view` y `reports.viewOwnArea`.
+   - El rango por defecto es últimos 30 días; los filtros inválidos se ignoran de forma segura y un rango invertido se normaliza.
+   - ApexCharts se registra una sola vez en `app.js`; cada gráfica usa un `wire:key` distinto para forzar recreación al cambiar filtros.
+   - SMTP real, buzón IMAP real, `storage:link`, queue worker y scheduler siguen pendientes para la Fase 7.
+- **Próximo paso:** Fase 7 — Hardening y entrega: SMTP real, `storage:link`, queue worker, scheduler, rate limiting, seeders de demostración y verificación final de extremo a extremo.
+- **Checklist del plan actualizado:** sí, Fase 6 marcada como completada.
+
+---
+
+## 2026-11-20 — Fases 4 y 5 completadas + optimización del tablero ✅
+
+- **Fase:** 4 y 5 completadas; optimización del tablero entregada; Fase 6 iniciada.
+- **Qué se hizo:**
+   - Unificado el tablero en 3 columnas (`Por hacer`, `En proceso`, `Terminado`) con selector `Mis tareas | Mi área | Todas` y defaults por rol.
+   - Reagrupados `Assigned` en `Por hacer` y `Testing`/`Blocked` en `En proceso`, con badge `Bloqueado` y sin columna `Asignado`.
+   - Implementadas subtareas, dependencias `finish_to_start`, tiempos opcionales, vista detalle, comentarios/adjuntos privados, evidencia opcional antes de `Done` y notificación al superior.
+   - Creada administración de usuarios, roles y permisos; `colaborador` recibió `tasks.create` y crea siempre en su área, asignado a sí mismo y en `Por hacer`.
+   - Rediseñadas las tarjetas: título y avatar colapsados, expansión en sitio, menú de tres puntos, icono `+` por columna, badges corregidos y adjuntos agrupados por tipo con iconos y descarga en pestaña nueva.
+   - Optimizado el tablero para grandes volúmenes: búsqueda y filtros, vista Lista, lotes de 50 activas y 20 terminadas recientes, contadores SQL reales, historial por fecha bajo demanda, paginación por cursor y arrastre restringido a terminadas recientes.
+   - Añadidos índices `(status, completed_at)`, `(area_id, status, completed_at)`, `(assignee_id, status, completed_at)` y `(status, position, id)`.
+   - Confirmado el commit y push de todo lo anterior en `d0d57ad`.
+- **Archivos creados/modificados (resumen):**
+   - Nuevos: `tests/Feature/BoardHistoryTest.php`, migración `add_performance_indexes_to_tasks_table`, componente `attachment-icons` e iconos Lucide publicados.
+   - Modificados: `app/Livewire/Boards/Index.php`, `app/Actions/Tasks/MoveTask.php`, `app/Actions/Tasks/CreateTask.php`, `app/Policies/TaskPolicy.php`, `app/TaskStatus.php`, `app/TicketPriority.php`, seeder de roles, vista `livewire/boards/index.blade.php` y pruebas relacionadas.
+- **Pruebas ejecutadas:**
+   - `php artisan test --compact` → **172/172 en verde, 512 aserciones**.
+   - `vendor/bin/phpstan analyse --no-progress` → **0 errores**.
+   - `vendor/bin/pint --dirty --format agent` → aplicado.
+   - `npm run build` → correcto.
+   - `php artisan migrate --force` → migración de índices aplicada; `SHOW INDEX` y `EXPLAIN` verificados.
+- **Problemas / bloqueos resueltos:**
+   - El primer intento de rollback falló porque el `down()` no era idempotente tras editar una migración ya aplicada; se ajustó con `Schema::hasIndex()` y se reaplicó correctamente.
+   - `assertDontSee()` era demasiado amplio en la vista Lista porque el título aparece en atributos del modal; se acotó con `wire:key="list-task-..."`.
+- **Decisiones nuevas / pendientes:**
+   - Los permisos existentes `reports.view` y `reports.viewOwnArea` se usarán para el alcance del dashboard; no se crearán permisos nuevos.
+   - El dashboard seguirá accesible para cualquier usuario autenticado, pero los datos se limitarán por rol: global, por área gestionada o personales.
+   - SMTP real, buzón IMAP real, `storage:link`, queue worker y scheduler siguen pendientes para la Fase 7/operación real.
+- **Próximo paso:** Fase 6 — ejecutada y documentada en la entrada superior de esta misma fecha.
+- **Checklist del plan actualizado:** sí, Fases 4 y 5 marcadas; Fase 6 registrada en la entrada superior.
 
 ---
 
