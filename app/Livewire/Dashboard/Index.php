@@ -136,7 +136,7 @@ class Index extends Component
 
         return Task::query()
             ->where('parent_id', $item->taskId)
-            ->with('assignee:id,name')
+            ->with(['assignee:id,name', 'latestStatusTransition'])
             ->orderBy('position')
             ->orderBy('id')
             ->get();
@@ -169,6 +169,13 @@ class Index extends Component
                 'row' => 'bg-zinc-100 dark:bg-zinc-800/60',
             ],
         };
+    }
+
+    public function subtaskStatusDateTime(Task $subtask): string
+    {
+        $statusChangedAt = $subtask->latestStatusTransition?->occurred_at;
+
+        return ($statusChangedAt ?? $subtask->completed_at ?? $subtask->updated_at)?->format('d/m/Y H:i') ?? '—';
     }
 
     #[Computed]

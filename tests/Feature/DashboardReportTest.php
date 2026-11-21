@@ -296,7 +296,7 @@ it('only marks roots with all subtasks done as ready for review', function () {
         ->and($report['readyForReviewWorkItems']->first()->isReadyForReview)->toBeTrue();
 });
 
-it('renders a collaborator subtask with its parent in the dashboard table', function () {
+it('renders expanded subtasks with the assignee avatar and the status date', function () {
     $area = Area::factory()->create();
     $manager = User::factory()->jefeArea()->create(['area_id' => $area->id]);
     $collaborator = User::factory()->colaborador()->create(['area_id' => $area->id]);
@@ -307,10 +307,15 @@ it('renders a collaborator subtask with its parent in the dashboard table', func
         'status' => TaskStatus::Testing,
         'title' => 'Entregable visible',
     ]);
-    Task::factory()->childOf($root)->done()->create([
+    $subtask = Task::factory()->childOf($root)->done()->create([
         'area_id' => $area->id,
         'assignee_id' => $collaborator->id,
         'title' => 'Subtarea del colaborador',
+    ]);
+    TaskStatusTransition::factory()->create([
+        'task_id' => $subtask->id,
+        'to_status' => TaskStatus::Done->value,
+        'occurred_at' => '2025-02-02 10:30:00',
     ]);
 
     Livewire::actingAs($collaborator)->test(DashboardIndex::class)
@@ -320,6 +325,10 @@ it('renders a collaborator subtask with its parent in the dashboard table', func
         ->assertSet('expandedWorkItemId', 'task-'.$root->id)
         ->assertSee('Subtarea del colaborador')
         ->assertDontSee('Subtarea de: Entregable visible')
+        ->assertSeeHtml('data-flux-avatar')
+        ->assertSeeHtml('data-flux-tooltip-content')
+        ->assertSee($collaborator->name)
+        ->assertSee('02/02/2025 10:30')
         ->assertDontSee('Entregable terminado');
 });
 

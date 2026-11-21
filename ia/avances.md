@@ -21,6 +21,29 @@
 
 ---
 
+## 2026-11-21 — Avatar y fecha de estado en las subtareas del dashboard ✅
+
+- **Fase:** mejora de apariencia del dashboard (Fase 6, refinamiento).
+- **Qué se hizo:**
+    - En las subtareas desplegadas se sustituyó el texto del responsable por un `flux:avatar` circular tamaño `xs`, con color automático sembrado por `assignee_id`; el **nombre del responsable queda solo en el tooltip** (arriba). Para subtareas sin responsable se mantiene un avatar genérico con tooltip `Sin responsable`.
+    - La fecha situada después del badge de estado ahora es la **fecha del último cambio de estado** (`latestStatusTransition.occurred_at`), con respaldo a `completed_at` y luego `updated_at` para tareas sin transiciones registradas. Sigue ubicada inmediatamente después del badge.
+    - `Dashboard\Index::expandedSubtasks()` precarga `assignee` y `latestStatusTransition` para evitar consultas N+1; `Dashboard\Index::subtaskStatusDateTime()` centraliza el formato `d/m/Y H:i`.
+- **Hallazgos:**
+    - El commit previo `a2fe2e7` (-formateo y reajuste de celdas-) dejó las celdas sin `text-center`; se respetó ese estado y no se revirtieron esos cambios.
+    - El nombre del responsable también aparece en el selector de filtros, por lo que la prueba verifica además los marcadores `data-flux-avatar` y `data-flux-tooltip-content` para confirmar que el tooltip existe.
+- **Decisiones:**
+    - Se interpreta “fecha del estado” como la fecha en que la subtarea entró en su estado actual, no como la fecha de terminación; por eso se usa la última transición y se conserva `completed_at` solo como respaldo.
+    - No se agregaron dependencias ni permisos. Solo cambiaron la vista, el componente Livewire y una prueba feature.
+- **Próximo paso:** Fase 7 — Hardening y entrega: SMTP real, `storage:link`, queue worker, scheduler, rate limiting, seeders de demostración y verificación final de extremo a extremo. Publicar los commits pendientes cuando haya credenciales/SSH disponibles.
+- **Comandos ejecutados:**
+    - `vendor/bin/pint --dirty --format agent` → aplicado.
+    - `php artisan view:clear` → vistas compiladas limpias.
+    - `php artisan test --compact tests/Feature/DashboardReportTest.php` → **16/16 en verde, 118 aserciones**.
+    - `php artisan test --compact` → **193/193 en verde, 644 aserciones**.
+    - `vendor/bin/phpstan analyse --no-progress --error-format=raw` → **0 errores**.
+
+---
+
 ## 2026-11-21 — Ajuste visual de la tabla de entregables recientes ✅
 
 - **Fase:** mejora de apariencia del dashboard (Fase 6, refinamiento).

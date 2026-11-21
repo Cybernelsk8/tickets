@@ -378,9 +378,25 @@
                                                 >
                                                     {{ $subtask->title }}
                                                 </span>
-                                                <flux:text class="text-xs">
-                                                    {{ $subtask->assignee?->name ?? __('Sin responsable') }}
-                                                </flux:text>
+                                                @if ($subtask->assignee)
+                                                    <flux:avatar
+                                                        circle
+                                                        size="xs"
+                                                        color="auto"
+                                                        color:seed="{{ $subtask->assignee_id }}"
+                                                        name="{{ $subtask->assignee->name }}"
+                                                        :tooltip="$subtask->assignee->name"
+                                                        tooltip:position="top"
+                                                    />
+                                                @else
+                                                    <flux:avatar
+                                                        circle
+                                                        size="xs"
+                                                        icon="user"
+                                                        :tooltip="__('Sin responsable')"
+                                                        tooltip:position="top"
+                                                    />
+                                                @endif
                                                 <flux:badge
                                                     size="sm"
                                                     :color="$subtask->status->badgeColor()"
@@ -388,7 +404,7 @@
                                                     {{ $subtask->status->label() }}
                                                 </flux:badge>
                                                 <flux:text class="text-xs text-zinc-400">
-                                                    {{ $subtask->completed_at?->format('d/m/Y H:i') ?? '—' }}
+                                                    {{ $this->subtaskStatusDateTime($subtask) }}
                                                 </flux:text>
                                             </div>
                                         @empty
