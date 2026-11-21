@@ -21,6 +21,31 @@
 
 ---
 
+## 2026-11-21 — Ajuste visual de la tabla de entregables recientes ✅
+
+- **Fase:** mejora de apariencia del dashboard (Fase 6, refinamiento).
+- **Qué se hizo:**
+    - Centrado horizontal de todas las columnas de `Entregables recientes` (encabezados y celdas): entregable, progreso, área/prioridad y acciones. El progreso usa `justify-center` y el contenido del área se apila con `items-center`.
+    - Al desplegar una fila con subtareas, el panel usa un fondo/borde del **mismo color del progreso** de la tarea (rojo, naranja, amarillo o verde) y las filas de subtareas un tono más claro de esa misma familia, de modo que la pertenencia se reconoce por color.
+    - Se eliminó el texto `Subtarea de: <título>` y el encabezado `Subtareas de <título>`; ahora el encabezado dice `Subtareas · <progreso>` y cada fila muestra directamente **el título de la subtarea** (con `title` para tooltips), responsable, estado y fecha de terminación.
+    - El mapeo de colores se movió a `Dashboard\Index::subtaskPanelClasses()` para mantener la vista simple y evitar lógica de presentación repetida.
+- **Hallazgos:**
+    - Blade enmascara los bloques `@php … @endphp` como PHP crudo; al existir ya `@php($kpis = …)` en la misma vista, el bloque nuevo absorbía el resto de directivas (`@if`, `@foreach`) y provocaba `syntax error, unexpected token "endif"` al compilar. Se sustituyó por un `@php(...)` de una línea que llama al método del componente.
+    - La prueba `it renders a collaborator subtask with its parent in the dashboard table` se actualizó: ahora verifica que **no** aparezca `Subtarea de: …` y que sí se vea el título de la subtarea.
+- **Decisiones:**
+    - El color del panel sigue la barra de progreso de `DashboardWorkItem::$progressColor`; no se introdujeron colores nuevos ni clases arbitrarias.
+    - No se agregaron dependencias ni permisos; solo cambiaron la vista, el componente Livewire y una aserción de prueba.
+    - El título de la subtarea se muestra como texto principal; el tooltip conserva el nombre completo si se trunca.
+- **Próximo paso:** Fase 7 — Hardening y entrega: SMTP real, `storage:link`, queue worker, scheduler, rate limiting, seeders de demostración y verificación final de extremo a extremo. Publicar los commits pendientes cuando haya credenciales/SSH disponibles.
+- **Comandos ejecutados:**
+    - `vendor/bin/pint --dirty --format agent` → aplicado.
+    - `php artisan view:clear` → vistas compiladas limpias.
+    - `php artisan test --compact tests/Feature/DashboardReportTest.php` → **16/16 en verde, 114 aserciones**.
+    - `php artisan test --compact` → **193/193 en verde, 640 aserciones**.
+    - `vendor/bin/phpstan analyse --no-progress --error-format=raw` → **0 errores**.
+
+---
+
 ## 2026-11-21 — Consolidación de avances y publicación en `origin/main` ✅
 
 - **Fase:** cierre de jornada. Fases 0–6 completadas y publicadas; Fase 7 sigue pendiente.

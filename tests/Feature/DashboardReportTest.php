@@ -319,7 +319,7 @@ it('renders a collaborator subtask with its parent in the dashboard table', func
         ->call('toggleWorkItem', 'task-'.$root->id)
         ->assertSet('expandedWorkItemId', 'task-'.$root->id)
         ->assertSee('Subtarea del colaborador')
-        ->assertSee('Subtarea de: Entregable visible')
+        ->assertDontSee('Subtarea de: Entregable visible')
         ->assertDontSee('Entregable terminado');
 });
 

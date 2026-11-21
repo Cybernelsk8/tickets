@@ -142,6 +142,35 @@ class Index extends Component
             ->get();
     }
 
+    /**
+     * @return array{panel: string, row: string}
+     */
+    public function subtaskPanelClasses(string $progressColor): array
+    {
+        return match ($progressColor) {
+            'green' => [
+                'panel' => 'border-green-200/80 bg-green-50/70 dark:border-green-800/60 dark:bg-green-950/20',
+                'row' => 'bg-green-100/70 dark:bg-green-900/30',
+            ],
+            'yellow' => [
+                'panel' => 'border-yellow-200/80 bg-yellow-50/70 dark:border-yellow-800/60 dark:bg-yellow-950/20',
+                'row' => 'bg-yellow-100/70 dark:bg-yellow-900/30',
+            ],
+            'orange' => [
+                'panel' => 'border-orange-200/80 bg-orange-50/70 dark:border-orange-800/60 dark:bg-orange-950/20',
+                'row' => 'bg-orange-100/70 dark:bg-orange-900/30',
+            ],
+            'red' => [
+                'panel' => 'border-red-200/80 bg-red-50/70 dark:border-red-800/60 dark:bg-red-950/20',
+                'row' => 'bg-red-100/70 dark:bg-red-900/30',
+            ],
+            default => [
+                'panel' => 'border-zinc-200/80 bg-zinc-50 dark:border-zinc-700/60 dark:bg-zinc-900/40',
+                'row' => 'bg-zinc-100 dark:bg-zinc-800/60',
+            ],
+        };
+    }
+
     #[Computed]
     public function detailsWorkItem(): ?DashboardWorkItem
     {

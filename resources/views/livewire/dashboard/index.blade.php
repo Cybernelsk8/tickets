@@ -187,17 +187,17 @@
 
         <flux:table bleed container:class="mt-4">
             <flux:table.columns>
-                <flux:table.column>{{ __('Entregable') }}</flux:table.column>
-                <flux:table.column class="w-48">{{ __('Progreso') }}</flux:table.column>
-                <flux:table.column>{{ __('Área / Prioridad') }}</flux:table.column>
-                <flux:table.column class="w-16">{{ __('Acciones') }}</flux:table.column>
+                <flux:table.column class="text-center">{{ __('Entregable') }}</flux:table.column>
+                <flux:table.column class="w-48 text-center">{{ __('Progreso') }}</flux:table.column>
+                <flux:table.column class="text-center">{{ __('Área / Prioridad') }}</flux:table.column>
+                <flux:table.column class="w-16 text-center">{{ __('Acciones') }}</flux:table.column>
             </flux:table.columns>
 
             <flux:table.rows>
                 @forelse ($this->workItems as $item)
                     <flux:table.row wire:key="dashboard-work-item-{{ $item->key }}">
-                        <flux:table.cell class="align-top">
-                            <div class="flex items-start gap-2">
+                        <flux:table.cell class="align-top text-center">
+                            <div class="flex items-start justify-center gap-2">
                                 <flux:badge size="sm" :color="$item->ticketId === null ? 'indigo' : 'sky'">
                                     {{ $item->sourceLabel }}
                                 </flux:badge>
@@ -206,7 +206,7 @@
                                     @if ($item->hasSubtasks)
                                         <button
                                             type="button"
-                                            class="flex w-full items-center gap-1 text-start"
+                                            class="flex w-full items-center justify-center gap-1 text-center"
                                             wire:click="toggleWorkItem('{{ $item->key }}')"
                                             aria-expanded="{{ $expandedWorkItemId === $item->key ? 'true' : 'false' }}"
                                         >
@@ -254,9 +254,9 @@
                             </div>
                         </flux:table.cell>
 
-                        <flux:table.cell class="align-top">
+                        <flux:table.cell class="align-top text-center">
                             @if ($item->showProgressBar)
-                                <div class="flex items-center gap-2">
+                                <div class="flex items-center justify-center gap-2">
                                     <flux:progress
                                         :value="$item->progressPercent"
                                         :color="$item->progressColor"
@@ -271,18 +271,20 @@
                             @endif
                         </flux:table.cell>
 
-                        <flux:table.cell class="align-top">
-                            <flux:text class="text-xs">{{ $item->areaName ?? '—' }}</flux:text>
-                            @if ($item->priority !== null)
-                                <div class="mt-1">
-                                    <flux:badge size="sm" :color="$item->priority->badgeColor()">
-                                        {{ $item->priority->label() }}
-                                    </flux:badge>
-                                </div>
-                            @endif
+                        <flux:table.cell class="align-top text-center">
+                            <div class="flex flex-col items-center">
+                                <flux:text class="text-xs">{{ $item->areaName ?? '—' }}</flux:text>
+                                @if ($item->priority !== null)
+                                    <div class="mt-1">
+                                        <flux:badge size="sm" :color="$item->priority->badgeColor()">
+                                            {{ $item->priority->label() }}
+                                        </flux:badge>
+                                    </div>
+                                @endif
+                            </div>
                         </flux:table.cell>
 
-                        <flux:table.cell class="align-top">
+                        <flux:table.cell class="align-top text-center">
                             <flux:dropdown position="bottom" align="end">
                                 <flux:button
                                     icon="ellipsis-horizontal"
@@ -313,26 +315,26 @@
                     </flux:table.row>
 
                     @if ($item->hasSubtasks && $expandedWorkItemId === $item->key)
+                        @php($subtaskClasses = $this->subtaskPanelClasses($item->progressColor))
                         <flux:table.row wire:key="dashboard-work-item-detail-{{ $item->key }}">
                             <flux:table.cell colspan="4">
-                                <div class="rounded-lg border border-zinc-200/80 bg-zinc-50 p-3 dark:border-zinc-700/60 dark:bg-zinc-900/40">
+                                <div class="rounded-lg border p-3 {{ $subtaskClasses['panel'] }}">
                                     <flux:heading size="sm">
-                                        {{ __('Subtareas de :title', ['title' => $item->subject]) }} ·
-                                        {{ $item->progressLabel }}
+                                        {{ __('Subtareas') }} · {{ $item->progressLabel }}
                                     </flux:heading>
 
                                     <div class="mt-2 flex flex-col gap-2">
                                         @forelse ($this->expandedSubtasks as $subtask)
                                             <div
-                                                class="flex flex-wrap items-center justify-between gap-2 rounded-md bg-white px-3 py-2 text-sm dark:bg-zinc-900"
+                                                class="flex flex-wrap items-center justify-between gap-2 rounded-md px-3 py-2 text-sm {{ $subtaskClasses['row'] }}"
                                                 wire:key="dashboard-work-item-subtask-{{ $subtask->id }}"
                                             >
-                                                <div class="min-w-0 flex-1">
-                                                    <span class="block truncate">{{ $subtask->title }}</span>
-                                                    <flux:text class="text-xs text-zinc-400">
-                                                        {{ __('Subtarea de: :title', ['title' => $item->subject]) }}
-                                                    </flux:text>
-                                                </div>
+                                                <span
+                                                    class="min-w-0 flex-1 truncate font-medium"
+                                                    title="{{ $subtask->title }}"
+                                                >
+                                                    {{ $subtask->title }}
+                                                </span>
                                                 <flux:text class="text-xs">
                                                     {{ $subtask->assignee?->name ?? __('Sin responsable') }}
                                                 </flux:text>
