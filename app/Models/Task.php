@@ -2,10 +2,12 @@
 
 namespace App\Models;
 
+use App\Observers\TaskObserver;
 use App\TaskStatus;
 use App\TicketPriority;
 use Database\Factories\TaskFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -48,6 +50,7 @@ use Illuminate\Support\Carbon;
     'status', 'priority', 'estimated_minutes', 'actual_minutes', 'position',
     'due_at', 'started_at', 'testing_at', 'completed_at', 'created_by',
 ])]
+#[ObservedBy(TaskObserver::class)]
 class Task extends Model
 {
     /** @use HasFactory<TaskFactory> */

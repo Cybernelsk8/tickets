@@ -61,7 +61,8 @@ it('builds global aggregates for a super admin within the selected period', func
 
     expect($report['scopeLabel'])->toBe('Todas las áreas')
         ->and($report['totalTickets'])->toBe(1)
-        ->and($report['openTickets'])->toBe(1)
+        ->and($report['openTickets'])->toBe(0)
+        ->and($ticket->fresh()->status)->toBe(TaskStatus::Done)
         ->and($report['totalDeliverables'])->toBe(2)
         ->and($report['completedDeliverables'])->toBe(1)
         ->and($report['deliverableCompletionRate'])->toBe(50.0)

@@ -2,7 +2,6 @@
 
 namespace App\Actions\Tasks;
 
-use App\Actions\Tickets\CloseTicketWhenRootDone;
 use App\Mail\TaskStatusChangedMail;
 use App\Models\Task;
 use App\Models\TaskStatusTransition;
@@ -16,8 +15,6 @@ use Illuminate\Validation\ValidationException;
 
 class MoveTask
 {
-    public function __construct(private CloseTicketWhenRootDone $closeTicketWhenRootDone) {}
-
     /**
      * Move a task to another board status, persisting its position and history.
      */
@@ -73,10 +70,6 @@ class MoveTask
 
         DB::transaction(function () use ($task, $status, $position, $previousStatus, $statusChanged): void {
             $task->update($this->statusAttributes($task, $status));
-
-            if ($status === TaskStatus::Done) {
-                $this->closeTicketWhenRootDone->handle($task);
-            }
 
             $columnQuery = Task::query()
                 ->where('area_id', $task->area_id)

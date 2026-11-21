@@ -21,6 +21,38 @@
 
 ---
 
+## 2026-11-21 — Sincronización de tickets cerrados y KPI de tickets abiertos ✅
+
+- **Fase:** corrección de consistencia de datos descubierta al revisar el dashboard.
+- **Qué se hizo:**
+    - Se diagnosticó que el KPI `Tickets abiertos` contaba los tickets con `status != done`; TKT-0002 y TKT-0003 seguían `assigned` con `closed_at` nulo aunque sus tareas raíz (14 y 17) ya estaban `done`. El cierre automático solo se ejecutaba desde `MoveTask`, por lo que las raíces terminadas por otros caminos dejaban el ticket abierto.
+    - Nuevo comando `php artisan tickets:close-completed-roots` con opción `--dry-run`: recorre raíces `done` cuyo ticket sigue abierto, cierra el ticket y conserva `closed_at` de la fecha de terminación de la raíz. Se ejecutó primero en modo vista previa (2 tickets) y luego de forma real: **TKT-0002 y TKT-0003 quedaron `done`**, con `closed_at` 19/11 20:57 y 20/11 16:39 respectivamente.
+    - `CloseTicketWhenRootDone::handle()` acepta ahora una fecha de cierre opcional para no perder la fecha histórica en la reparación.
+    - Nuevo `TaskObserver` registrado con `#[ObservedBy]` en `Task`: cierra el ticket cuando una raíz se crea ya terminada o cuando cambia a `Done` por cualquier camino. `MoveTask` ya no llama explícitamente a la acción para evitar duplicar el cierre.
+    - Prueba feature nueva `CloseCompletedRootTicketsTest` cubre la reparación, el `--dry-run`, el cierre tras una actualización directa y el cierre al crear una raíz terminada.
+- **Hallazgos:**
+    - La prueba `builds global aggregates for a super admin within the selected period` esperaba `openTickets = 1` aunque creaba una raíz terminada con ticket; con el observer correcto el valor pasó a `0`. Se actualizó la expectativa y se añadió la comprobación de que el ticket queda `done`.
+    - Los datos reales quedaron verificados en BD: los 4 tickets están `done` y ninguno conserva `closed_at` nulo.
+- **Decisiones:**
+    - Se prefirió un comando Artisan reutilizable sobre una migración de datos: permite revisiones futuras con `--dry-run` y deja constancia en la bitácora.
+    - El ticket sigue siendo la fuente de verdad del KPI; se reparó el ticket en lugar de cambiar el reporte para inferir el estado desde la tarea raíz.
+    - Para el cierre histórico se usa `completed_at` de la raíz; para cierres en vivo se mantiene `now()` a través del action/observer.
+- **Próximo paso:** Fase 7 — Hardening y entrega: SMTP real, `storage:link`, queue worker, scheduler, rate limiting, seeders de demostración y verificación final de extremo a extremo. Publicar los commits pendientes cuando haya credenciales/SSH disponibles.
+- **Comandos ejecutados:**
+    - `php artisan make:command CloseCompletedRootTicketsCommand --no-interaction`
+    - `php artisan make:observer TaskObserver --model=Task --no-interaction`
+    - `php artisan make:test --pest CloseCompletedRootTicketsTest --no-interaction`
+    - `vendor/bin/pint --dirty --format agent` → aplicado.
+    - `php artisan test --compact tests/Feature/CloseCompletedRootTicketsTest.php` → **4/4 en verde, 15 aserciones**.
+    - `php artisan test --compact tests/Feature/DashboardReportTest.php tests/Feature/CloseCompletedRootTicketsTest.php tests/Feature/TaskCompletionRulesTest.php tests/Feature/MoveTaskTest.php` → **30/30 en verde, 158 aserciones**.
+    - `php artisan test --compact` → **197/197 en verde, 660 aserciones**.
+    - `vendor/bin/phpstan analyse --no-progress --error-format=raw` → **0 errores**.
+    - `php artisan tickets:close-completed-roots --dry-run` → `Tickets que se cerrarían: 2` (TKT-0002, TKT-0003).
+    - `php artisan tickets:close-completed-roots` → `Tickets cerrados: 2`.
+    - Consulta de verificación sobre `tickets` → los 4 tickets en `done` con `closed_at` poblado.
+
+---
+
 ## 2026-11-21 — Avatar y fecha de estado en las subtareas del dashboard ✅
 
 - **Fase:** mejora de apariencia del dashboard (Fase 6, refinamiento).

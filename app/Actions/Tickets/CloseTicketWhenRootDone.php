@@ -5,13 +5,14 @@ namespace App\Actions\Tickets;
 use App\Models\Task;
 use App\Models\Ticket;
 use App\TaskStatus;
+use Carbon\CarbonInterface;
 
 class CloseTicketWhenRootDone
 {
     /**
      * Close the ticket linked to a root task that has just been delivered.
      */
-    public function handle(Task $task): ?Ticket
+    public function handle(Task $task, ?CarbonInterface $closedAt = null): ?Ticket
     {
         if ($task->parent_id !== null
             || $task->status !== TaskStatus::Done
@@ -27,7 +28,7 @@ class CloseTicketWhenRootDone
 
         $ticket->update([
             'status' => TaskStatus::Done,
-            'closed_at' => $ticket->closed_at ?? now(),
+            'closed_at' => $ticket->closed_at ?? $closedAt ?? $task->completed_at ?? now(),
         ]);
 
         return $ticket->refresh();
