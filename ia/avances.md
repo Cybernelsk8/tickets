@@ -21,6 +21,39 @@
 
 ---
 
+## 2026-11-21 — Consolidación de avances y publicación en `origin/main` ✅
+
+- **Fase:** cierre de jornada. Fases 0–6 completadas y publicadas; Fase 7 sigue pendiente.
+- **Qué se hizo:**
+    - **Fase 0–1:** confirmadas D1–D10 e instaladas las dependencias autorizadas (`spatie/laravel-permission`, `webklex/php-imap`, `apexcharts`). Creadas 13 migraciones de dominio, modelos, factories, seeders, policies, navegación por permisos y componentes Livewire base. Suite en **60/60**.
+    - **Fase 2:** cliente IMAP desacoplado, sincronización con deduplicación/hilos/adjuntos privados, job con reintentos, comando `tickets:sync-mail`, scheduler y bandeja funcional. Suite en **81/81**.
+    - **Fase 3:** conversión de mensajes a ticket con código `TKT-0001`, asignación con validación de área, tarea raíz, evento/listener y Mailable encolado. Suite en **94/94**.
+    - **Fases 4–5:** Kanban único de 3 columnas, DnD, subtareas, dependencias, tiempos, vista detalle, comentarios/adjuntos privados, administración de roles y altas de colaborador en su área. Optimización con lotes 50/20, historial bajo demanda, índices y vista Lista. Suite en **172/172**.
+    - **Fase 6:** dashboard con KPIs agregados e indexados, gráficas ApexCharts, filtros por rol y rango de fechas; regla **raíz manda** para separar entregables de subtareas; cierre de ticket al terminar la raíz; tabla única `Entregables recientes` con progreso, expansión de subtareas, dropdown y modal; deep link `Ver ticket` con `?search=<código>`. Suite en **193/193**.
+    - **Publicación:** los commits funcionales `0fadce2` y `043cc4e` están en `origin/main`. El commit que actualiza esta bitácora queda local y pendiente de publicación por falta de credenciales HTTPS.
+- **Hallazgos:**
+    - El primer intento de `git push` falló por falta de credenciales HTTPS; en esta jornada el push se completó y `origin/main` ya apunta a `043cc4e`.
+    - Las entradas anteriores todavía indicaban publicación pendiente; se actualizan para reflejar el estado real.
+    - Los ajustes finales de tipado estático exigieron documentar relaciones nullable en `Task`/`Ticket` y extraer los `?->` bajo `??` a variables locales para evitar `nullsafe.neverNull`, sin ignores ni baseline.
+- **Decisiones:**
+    - La raíz sigue siendo la unidad de entrega: las subtareas solo muestran avance y nunca cierran por sí solas.
+    - `Listas para revisión` es un filtro dentro de `Entregables recientes`, no una tabla ni tarjeta separada.
+    - No se crearon permisos nuevos: se reutilizan `reports.view`, `reports.viewOwnArea`, `tickets.viewAny` y la gestión de área.
+    - Correo entrante solo IMAP; SMTP continúa en modo `log` hasta la Fase 7. Nunca se almacenaron credenciales reales en código.
+    - `Ver ticket` usa `#[Url]` en `Tickets\Index.search` para hidratar el filtro desde la query string.
+- **Próximo paso:** Fase 7 — Hardening y entrega: SMTP real, `storage:link`, queue worker, scheduler, rate limiting, seeders de demostración y verificación final de extremo a extremo. Publicar el commit de esta bitácora cuando haya credenciales/SSH disponibles.
+- **Comandos ejecutados:**
+    - `php artisan test --compact` → **193/193 en verde, 640 aserciones**.
+    - `php artisan test --compact tests/Feature/DashboardReportTest.php tests/Feature/TaskCompletionRulesTest.php tests/Feature/Tickets/TicketsUiTest.php` → **26/26 en verde, 143 aserciones**.
+    - `vendor/bin/phpstan analyse --no-progress` → **0 errores**.
+    - `vendor/bin/pint --dirty --format agent` → aplicado.
+    - `npm run build` → correcto.
+    - `git status -sb` / `git rev-parse HEAD origin/main` → `origin/main` en `043cc4e`; el commit de bitácora queda local, 1 commit adelante.
+    - `browser-logs` → sin errores JS nuevos en `/dashboard` ni `/boards`.
+- **Checklist del plan actualizado:** sí; Fases 0–6 marcadas como completadas y publicadas.
+
+---
+
 ## 2026-11-20 — Fase 6: tabla única de entregables recientes en el dashboard ✅
 
 - **Fase:** 6 (Dashboard), unificación final de entregables, listas para revisión y tickets recientes.
@@ -57,7 +90,7 @@
     - Fallo inicial de eager load: los closures de `with()` reciben `Builder|Relation`; se ajustaron los tipos y la importación de `Relation`.
     - La prueba XSS fallaba porque el `<script>` estaba en el asunto del ticket, pero la fila usa el título de la tarea raíz; se movió el payload al lugar correcto.
     - Se mantuvo `Ver ticket` con deep link funcional en lugar de dejar solo el enlace genérico al listado.
-- **Próximo paso:** Fase 7 — Hardening y entrega: SMTP real, `storage:link`, queue worker, scheduler, rate limiting, seeders de demostración y verificación final de extremo a extremo. Publicación pendiente: el push a GitHub sigue bloqueado por falta de credenciales/SSH; el commit local quedará listo en `main`.
+- **Próximo paso:** Fase 7 — Hardening y entrega: SMTP real, `storage:link`, queue worker, scheduler, rate limiting, seeders de demostración y verificación final de extremo a extremo. Publicación resuelta: ambos commits están en `origin/main` (detalle en la entrada del 2026-11-21).
 - **Checklist del plan actualizado:** sí, Fase 6 queda documentada con la tabla unificada y el deep link de tickets.
 
 ---
@@ -97,7 +130,7 @@
 - **Problemas / bloqueos resueltos:**
     - PHPStan rechazó `Collection<int|string|null, …>` porque las claves de una colección no pueden ser `null`. Los valores `NULL` de `assignee_id` llegan como clave `''`; se ajustaron las anotaciones y comparaciones a `int|string` con centinela `''`.
     - Existía una aparente contradicción entre “solo el jefe aprueba” y “el colaborador puede terminar la tarea asignada directamente”: se resolvió exigiendo aprobación únicamente cuando la raíz tiene subtareas.
-- **Próximo paso:** Fase 7 — Hardening y entrega: SMTP real, `storage:link`, queue worker, scheduler, rate limiting, seeders de demostración y verificación final de extremo a extremo. Queda además publicar el commit local pendiente cuando haya credenciales de GitHub disponibles.
+- **Próximo paso:** Fase 7 — Hardening y entrega: SMTP real, `storage:link`, queue worker, scheduler, rate limiting, seeders de demostración y verificación final de extremo a extremo. La publicación ya se completó; `origin/main` apunta a `043cc4e`.
 - **Checklist del plan actualizado:** sí, Fase 6 queda documentada con la regla “raíz manda”.
 
 ---
