@@ -14,12 +14,18 @@
         <div class="flex flex-wrap items-end gap-3">
             <flux:field class="w-full sm:w-40">
                 <flux:label>{{ __('Desde') }}</flux:label>
-                <flux:input type="date" wire:model.live="from" />
+                <flux:input
+                    type="date"
+                    wire:model.live="from"
+                />
             </flux:field>
 
             <flux:field class="w-full sm:w-40">
                 <flux:label>{{ __('Hasta') }}</flux:label>
-                <flux:input type="date" wire:model.live="to" />
+                <flux:input
+                    type="date"
+                    wire:model.live="to"
+                />
             </flux:field>
 
             <flux:field class="w-full sm:w-48">
@@ -27,7 +33,10 @@
                 <flux:select wire:model.live="areaId">
                     <flux:select.option value="">{{ __('Todas') }}</flux:select.option>
                     @foreach ($this->areas as $area)
-                        <flux:select.option :value="(string) $area->id" wire:key="dashboard-area-{{ $area->id }}">
+                        <flux:select.option
+                            :value="(string) $area->id"
+                            wire:key="dashboard-area-{{ $area->id }}"
+                        >
                             {{ $area->name }}
                         </flux:select.option>
                     @endforeach
@@ -39,7 +48,10 @@
                 <flux:select wire:model.live="categoryId">
                     <flux:select.option value="">{{ __('Todas') }}</flux:select.option>
                     @foreach ($this->categories as $category)
-                        <flux:select.option :value="(string) $category->id" wire:key="dashboard-category-{{ $category->id }}">
+                        <flux:select.option
+                            :value="(string) $category->id"
+                            wire:key="dashboard-category-{{ $category->id }}"
+                        >
                             {{ $category->name }}
                         </flux:select.option>
                     @endforeach
@@ -51,36 +63,35 @@
                 <flux:select wire:model.live="assigneeId">
                     <flux:select.option value="">{{ __('Todos') }}</flux:select.option>
                     @foreach ($this->assignees as $assignee)
-                        <flux:select.option :value="(string) $assignee->id" wire:key="dashboard-assignee-{{ $assignee->id }}">
+                        <flux:select.option
+                            :value="(string) $assignee->id"
+                            wire:key="dashboard-assignee-{{ $assignee->id }}"
+                        >
                             {{ $assignee->name }}
                         </flux:select.option>
                     @endforeach
                 </flux:select>
             </flux:field>
 
-            <flux:button size="sm" variant="ghost" wire:click="clearFilters">
+            <flux:button
+                size="sm"
+                variant="ghost"
+                wire:click="clearFilters"
+            >
                 {{ __('Limpiar') }}
             </flux:button>
         </div>
 
-        <flux:text class="mt-3 text-xs text-zinc-400" wire:loading.delay>
+        <flux:text
+            class="mt-3 text-xs text-zinc-400"
+            wire:loading.delay
+        >
             {{ __('Actualizando indicadores...') }}
         </flux:text>
     </flux:card>
 
     <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-        @php($kpis = [
-            ['label' => __('Total de tickets'), 'value' => $this->report['totalTickets']],
-            ['label' => __('Tickets abiertos'), 'value' => $this->report['openTickets']],
-            ['label' => __('Entregables'), 'value' => $this->report['totalDeliverables']],
-            ['label' => __('Entregables terminados'), 'value' => $this->report['completedDeliverables']],
-            ['label' => __('% entregables terminados'), 'value' => number_format($this->report['deliverableCompletionRate'], 1).' %'],
-            ['label' => __('Subtareas terminadas'), 'value' => $this->report['completedSubtasks']],
-            ['label' => __('Avance del desglose'), 'value' => number_format($this->report['subtaskProgressRate'], 1).' %'],
-            ['label' => __('Listas para revisión'), 'value' => $this->report['readyForReview'], 'filter' => 'review'],
-            ['label' => __('Vencidas'), 'value' => $this->report['overdueDeliverables']],
-            ['label' => __('Ciclo promedio (h)'), 'value' => number_format($this->report['averageCycleHours'], 1)],
-        ])
+        @php($kpis = [['label' => __('Total de tickets'), 'value' => $this->report['totalTickets']], ['label' => __('Tickets abiertos'), 'value' => $this->report['openTickets']], ['label' => __('Entregables'), 'value' => $this->report['totalDeliverables']], ['label' => __('Entregables terminados'), 'value' => $this->report['completedDeliverables']], ['label' => __('% entregables terminados'), 'value' => number_format($this->report['deliverableCompletionRate'], 1) . ' %'], ['label' => __('Subtareas terminadas'), 'value' => $this->report['completedSubtasks']], ['label' => __('Avance del desglose'), 'value' => number_format($this->report['subtaskProgressRate'], 1) . ' %'], ['label' => __('Listas para revisión'), 'value' => $this->report['readyForReview'], 'filter' => 'review'], ['label' => __('Vencidas'), 'value' => $this->report['overdueDeliverables']], ['label' => __('Ciclo promedio (h)'), 'value' => number_format($this->report['averageCycleHours'], 1)]])
 
         @foreach ($kpis as $kpi)
             <flux:card wire:key="dashboard-kpi-{{ $loop->index }}">
@@ -92,23 +103,31 @@
                         title="{{ __('Filtrar la tabla por listas para revisión') }}"
                     >
                         <flux:text>{{ $kpi['label'] }}</flux:text>
-                        <flux:heading size="2xl" class="mt-1">{{ $kpi['value'] }}</flux:heading>
+                        <flux:heading
+                            size="2xl"
+                            class="mt-1"
+                        >{{ $kpi['value'] }}</flux:heading>
                     </button>
                 @else
                     <flux:text>{{ $kpi['label'] }}</flux:text>
-                    <flux:heading size="2xl" class="mt-1">{{ $kpi['value'] }}</flux:heading>
+                    <flux:heading
+                        size="2xl"
+                        class="mt-1"
+                    >{{ $kpi['value'] }}</flux:heading>
                 @endif
             </flux:card>
         @endforeach
     </div>
 
     <div class="grid gap-4 lg:grid-cols-2">
-        @php($topCharts = [
-            'status' => __('Entregables por estado'),
-            'priority' => __('Tickets por prioridad'),
-            'area' => __('Entregables por área'),
-            'category' => __('Tickets por categoría'),
-        ])
+        @php(
+    $topCharts = [
+        'status' => __('Entregables por estado'),
+        'priority' => __('Tickets por prioridad'),
+        'area' => __('Entregables por área'),
+        'category' => __('Tickets por categoría')
+    ]
+)
 
         @foreach ($topCharts as $chartKey => $chartTitle)
             <flux:card>
@@ -156,7 +175,10 @@
                         wire:key="dashboard-stage-{{ $loop->index }}"
                     >
                         <flux:text class="text-xs">{{ $stage['label'] }}</flux:text>
-                        <flux:heading size="lg" class="mt-1">{{ number_format($stage['hours'], 1) }} h</flux:heading>
+                        <flux:heading
+                            size="lg"
+                            class="mt-1"
+                        >{{ number_format($stage['hours'], 1) }} h</flux:heading>
                     </div>
                 @endforeach
             </div>
@@ -185,7 +207,10 @@
             </flux:field>
         </div>
 
-        <flux:table bleed container:class="mt-4">
+        <flux:table
+            bleed
+            container:class="mt-4"
+        >
             <flux:table.columns>
                 <flux:table.column class="text-center">{{ __('Entregable') }}</flux:table.column>
                 <flux:table.column class="w-48 text-center">{{ __('Progreso') }}</flux:table.column>
@@ -196,13 +221,16 @@
             <flux:table.rows>
                 @forelse ($this->workItems as $item)
                     <flux:table.row wire:key="dashboard-work-item-{{ $item->key }}">
-                        <flux:table.cell class="align-top text-center">
-                            <div class="flex items-start justify-center gap-2">
-                                <flux:badge size="sm" :color="$item->ticketId === null ? 'indigo' : 'sky'">
+                        <flux:table.cell>
+                            <div class="flex items-start gap-2">
+                                <flux:badge
+                                    size="sm"
+                                    :color="$item->ticketId === null ? 'indigo' : 'sky'"
+                                >
                                     {{ $item->sourceLabel }}
                                 </flux:badge>
 
-                                <div class="min-w-0 flex-1">
+                                <div>
                                     @if ($item->hasSubtasks)
                                         <button
                                             type="button"
@@ -235,7 +263,10 @@
                                     </flux:text>
 
                                     <div class="mt-1 flex flex-wrap items-center gap-2">
-                                        <flux:badge size="sm" :color="$item->status->badgeColor()">
+                                        <flux:badge
+                                            size="sm"
+                                            :color="$item->status->badgeColor()"
+                                        >
                                             {{ $item->status->label() }}
                                         </flux:badge>
                                         <flux:text class="text-xs text-zinc-400">
@@ -245,7 +276,10 @@
                                             ]) }}
                                         </flux:text>
                                         @if ($item->isReadyForReview)
-                                            <flux:badge size="sm" color="amber">
+                                            <flux:badge
+                                                size="sm"
+                                                color="amber"
+                                            >
                                                 {{ __('Lista para revisión') }}
                                             </flux:badge>
                                         @endif
@@ -254,7 +288,7 @@
                             </div>
                         </flux:table.cell>
 
-                        <flux:table.cell class="align-top text-center">
+                        <flux:table.cell>
                             @if ($item->showProgressBar)
                                 <div class="flex items-center justify-center gap-2">
                                     <flux:progress
@@ -267,16 +301,22 @@
                                     </flux:text>
                                 </div>
                             @else
-                                <flux:badge size="sm" color="zinc">{{ __('Sin desglose') }}</flux:badge>
+                                <flux:badge
+                                    size="sm"
+                                    color="zinc"
+                                >{{ __('Sin desglose') }}</flux:badge>
                             @endif
                         </flux:table.cell>
 
-                        <flux:table.cell class="align-top text-center">
+                        <flux:table.cell>
                             <div class="flex flex-col items-center">
                                 <flux:text class="text-xs">{{ $item->areaName ?? '—' }}</flux:text>
                                 @if ($item->priority !== null)
                                     <div class="mt-1">
-                                        <flux:badge size="sm" :color="$item->priority->badgeColor()">
+                                        <flux:badge
+                                            size="sm"
+                                            :color="$item->priority->badgeColor()"
+                                        >
                                             {{ $item->priority->label() }}
                                         </flux:badge>
                                     </div>
@@ -284,8 +324,11 @@
                             </div>
                         </flux:table.cell>
 
-                        <flux:table.cell class="align-top text-center">
-                            <flux:dropdown position="bottom" align="end">
+                        <flux:table.cell>
+                            <flux:dropdown
+                                position="bottom"
+                                align="end"
+                            >
                                 <flux:button
                                     icon="ellipsis-horizontal"
                                     size="xs"
@@ -320,7 +363,7 @@
                             <flux:table.cell colspan="4">
                                 <div class="rounded-lg border p-3 {{ $subtaskClasses['panel'] }}">
                                     <flux:heading size="sm">
-                                        {{ __('Subtareas') }} · {{ $item->progressLabel }}
+                                        {{ __('Subtareas') }} {{ $item->progressLabel }}
                                     </flux:heading>
 
                                     <div class="mt-2 flex flex-col gap-2">
@@ -338,7 +381,10 @@
                                                 <flux:text class="text-xs">
                                                     {{ $subtask->assignee?->name ?? __('Sin responsable') }}
                                                 </flux:text>
-                                                <flux:badge size="sm" :color="$subtask->status->badgeColor()">
+                                                <flux:badge
+                                                    size="sm"
+                                                    :color="$subtask->status->badgeColor()"
+                                                >
                                                     {{ $subtask->status->label() }}
                                                 </flux:badge>
                                                 <flux:text class="text-xs text-zinc-400">
@@ -379,14 +425,23 @@
             <div class="flex flex-col gap-4">
                 <div>
                     <div class="flex flex-wrap items-center gap-2">
-                        <flux:badge size="sm" :color="$detail->ticketId === null ? 'indigo' : 'sky'">
+                        <flux:badge
+                            size="sm"
+                            :color="$detail->ticketId === null ? 'indigo' : 'sky'"
+                        >
                             {{ $detail->sourceLabel }}
                         </flux:badge>
-                        <flux:badge size="sm" :color="$detail->status->badgeColor()">
+                        <flux:badge
+                            size="sm"
+                            :color="$detail->status->badgeColor()"
+                        >
                             {{ $detail->status->label() }}
                         </flux:badge>
                     </div>
-                    <flux:heading size="lg" class="mt-2">{{ $detail->displayTitle }}</flux:heading>
+                    <flux:heading
+                        size="lg"
+                        class="mt-2"
+                    >{{ $detail->displayTitle }}</flux:heading>
                     <flux:text class="mt-1">
                         {{ $detail->description ?: __('Sin descripción.') }}
                     </flux:text>
@@ -433,7 +488,8 @@
                     <div>
                         <flux:text class="text-xs">{{ __('Último estado') }}</flux:text>
                         <p class="text-sm font-medium">
-                            {{ $detail->statusChangedByName ?? __('Sistema') }} · {{ $detail->statusChangedAt ?? '—' }}
+                            {{ $detail->statusChangedByName ?? __('Sistema') }} ·
+                            {{ $detail->statusChangedAt ?? '—' }}
                         </p>
                     </div>
                     <div>
@@ -456,7 +512,11 @@
 
                 <div class="flex justify-end gap-2">
                     @if ($detail->ticketId !== null)
-                        <flux:button variant="ghost" :href="route('tickets.index', ['search' => $detail->code])" icon="ticket">
+                        <flux:button
+                            variant="ghost"
+                            :href="route('tickets.index', ['search' => $detail->code])"
+                            icon="ticket"
+                        >
                             {{ __('Ver ticket') }}
                         </flux:button>
                     @endif
